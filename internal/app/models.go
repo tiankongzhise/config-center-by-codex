@@ -19,3 +19,14 @@ type Session struct {
 	CreatedAt time.Time
 	RevokedAt *time.Time
 }
+
+type Project struct {
+	ID           string    `json:"id"`
+	OwnerID      string    `json:"ownerId"`
+	Name         string    `json:"name"`
+	Code         string    `json:"code"`
+	Description  string    `json:"description"`
+	RSAPublicKey string    `json:"rsaPublicKey"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}

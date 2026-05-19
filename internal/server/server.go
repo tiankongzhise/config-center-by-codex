@@ -14,16 +14,18 @@ import (
 const sessionCookieName = "config_center_session"
 
 type Server struct {
-	cfg   config.Config
-	auth  *app.Service
-	store *store.Store
+	cfg      config.Config
+	auth     *app.Service
+	projects *app.ProjectService
+	store    *store.Store
 }
 
 func New(cfg config.Config, store *store.Store) *Server {
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		auth:  app.NewService(store),
+		cfg:      cfg,
+		store:    store,
+		auth:     app.NewService(store),
+		projects: app.NewProjectService(store),
 	}
 }
 
@@ -34,6 +36,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/auth/me", s.me)
+	mux.HandleFunc("GET /api/projects", s.listProjects)
+	mux.HandleFunc("POST /api/projects", s.createProject)
+	mux.HandleFunc("GET /api/projects/{id}", s.getProject)
+	mux.HandleFunc("PUT /api/projects/{id}", s.updateProject)
+	mux.HandleFunc("DELETE /api/projects/{id}", s.deleteProject)
 	mux.HandleFunc("GET /", s.index)
 	return mux
 }
@@ -114,6 +121,78 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	projects, err := s.projects.List(r.Context(), user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list projects failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
+}
+
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var input app.CreateProjectInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	project, err := s.projects.Create(r.Context(), user, input)
+	if err != nil {
+		writeStoreOrValidationError(w, err, "project code already exists")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"project": project})
+}
+
+func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	project, err := s.projects.Get(r.Context(), user, r.PathValue("id"))
+	if err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": project})
+}
+
+func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var input app.UpdateProjectInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	project, err := s.projects.Update(r.Context(), user, r.PathValue("id"), input)
+	if err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": project})
+}
+
+func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := s.projects.Delete(r.Context(), user, r.PathValue("id")); err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (app.User, bool) {
 	user, err := s.auth.CurrentUser(r.Context(), sessionToken(r))
 	if err != nil {
@@ -179,4 +258,18 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": message,
 	})
+}
+
+func writeStoreOrValidationError(w http.ResponseWriter, err error, conflictMessage string) {
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		if conflictMessage == "" {
+			conflictMessage = "resource already exists"
+		}
+		writeError(w, http.StatusConflict, conflictMessage)
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "resource not found")
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
+	}
 }

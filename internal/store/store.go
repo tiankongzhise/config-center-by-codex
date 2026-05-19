@@ -113,6 +113,97 @@ func (s *Store) RevokeSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
+func (s *Store) CreateProject(ctx context.Context, project app.Project) (app.Project, error) {
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO projects (id, owner_id, name, code, description, rsa_public_key)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, owner_id, name, code, description, rsa_public_key, created_at, updated_at
+	`, project.ID, project.OwnerID, project.Name, project.Code, project.Description, project.RSAPublicKey)
+	created, err := scanProject(row)
+	if isUniqueViolation(err) {
+		return app.Project{}, ErrConflict
+	}
+	return created, err
+}
+
+func (s *Store) ListProjects(ctx context.Context, ownerID string) ([]app.Project, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, owner_id, name, code, description, rsa_public_key, created_at, updated_at
+		FROM projects
+		WHERE owner_id = $1
+		ORDER BY created_at DESC
+	`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []app.Project
+	for rows.Next() {
+		project, err := scanProject(rows)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, project)
+	}
+	return projects, rows.Err()
+}
+
+func (s *Store) FindProjectForOwner(ctx context.Context, ownerID, projectID string) (app.Project, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner_id, name, code, description, rsa_public_key, created_at, updated_at
+		FROM projects
+		WHERE id = $1 AND owner_id = $2
+	`, projectID, ownerID)
+	return scanProject(row)
+}
+
+func (s *Store) FindProjectByCode(ctx context.Context, code string) (app.Project, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner_id, name, code, description, rsa_public_key, created_at, updated_at
+		FROM projects
+		WHERE code = $1
+	`, code)
+	return scanProject(row)
+}
+
+func (s *Store) UpdateProject(ctx context.Context, project app.Project) (app.Project, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE projects
+		SET name = $1, description = $2, rsa_public_key = $3, updated_at = now()
+		WHERE id = $4 AND owner_id = $5
+	`, project.Name, project.Description, project.RSAPublicKey, project.ID, project.OwnerID)
+	if err != nil {
+		return app.Project{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return app.Project{}, err
+	}
+	if count == 0 {
+		return app.Project{}, ErrNotFound
+	}
+	return s.FindProjectForOwner(ctx, project.OwnerID, project.ID)
+}
+
+func (s *Store) DeleteProject(ctx context.Context, ownerID, projectID string) error {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM projects
+		WHERE id = $1 AND owner_id = $2
+	`, projectID, ownerID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -129,6 +220,29 @@ func scanUser(row scanner) (app.User, error) {
 		return app.User{}, err
 	}
 	return user, nil
+}
+
+func scanProject(row scanner) (app.Project, error) {
+	var project app.Project
+	if err := row.Scan(
+		&project.ID,
+		&project.OwnerID,
+		&project.Name,
+		&project.Code,
+		&project.Description,
+		&project.RSAPublicKey,
+		&project.CreatedAt,
+		&project.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return app.Project{}, ErrNotFound
+		}
+		if isUniqueViolation(err) {
+			return app.Project{}, ErrConflict
+		}
+		return app.Project{}, err
+	}
+	return project, nil
 }
 
 func isUniqueViolation(err error) bool {
