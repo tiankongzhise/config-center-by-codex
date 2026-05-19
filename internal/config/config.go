@@ -80,6 +80,10 @@ func Load(path string) (Config, error) {
 		AuthLimitAppSecret:   get("AUTH_LIMIT_APP_SECRET", ""),
 	}
 
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = defaultBaseURL
+	}
+
 	if cfg.DatabaseURL == "" && cfg.ConfigDBPassword != "" {
 		cfg.DatabaseURL = fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",

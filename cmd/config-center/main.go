@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tiankongzhise/config-center-by-codex/internal/authlimit"
 	"github.com/tiankongzhise/config-center-by-codex/internal/config"
 	"github.com/tiankongzhise/config-center-by-codex/internal/db"
 	"github.com/tiankongzhise/config-center-by-codex/internal/server"
@@ -39,13 +40,51 @@ func run(args []string) error {
 	case "migrate":
 		return migrateDB(args[1:])
 	case "register-service":
-		return fmt.Errorf("%s command is not implemented yet", args[0])
+		return registerService(args[1:])
 	case "-h", "--help", "help":
 		printHelp()
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func registerService(args []string) error {
+	fs := flag.NewFlagSet("register-service", flag.ContinueOnError)
+	envPath := fs.String("env", ".env", "path to dotenv file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*envPath)
+	if err != nil {
+		return err
+	}
+	if cfg.AuthLimitAdmin == "" || cfg.AuthLimitAdminSecret == "" {
+		return errors.New("AUTH_LIMIT_ADMIN/AUTH_SERVICE_ADMIN and AUTH_LIMIT_ADMIN_SECRET/AUTH_SERVICE_ADMIN_SECRET are required")
+	}
+
+	client := authlimit.New(cfg)
+	ctx := context.Background()
+	adminToken, err := client.LoginAdmin(ctx, cfg.AuthLimitAdmin, cfg.AuthLimitAdminSecret)
+	if err != nil {
+		return err
+	}
+	registered, err := client.RegisterService(ctx, adminToken, cfg)
+	if err != nil {
+		return err
+	}
+	if err := config.UpdateDotEnv(*envPath, map[string]string{
+		"AUTH_LIMIT_BASE_URL":   cfg.AuthLimitBaseURL,
+		"AUTH_LIMIT_SERVICE_ID": registered.ServiceID,
+		"AUTH_LIMIT_APP_ID":     registered.AppID,
+		"AUTH_LIMIT_APP_SECRET": registered.AppSecret,
+	}); err != nil {
+		return err
+	}
+
+	slog.Info("auth-limit service registration completed", "serviceId", registered.ServiceID, "appId", registered.AppID)
+	return nil
 }
 
 func initDB(args []string) error {
