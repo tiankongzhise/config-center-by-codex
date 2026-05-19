@@ -33,3 +33,20 @@ func TestValidatePublicServiceURLAllowsHTTPS(t *testing.T) {
 		t.Fatalf("expected public https url to pass: %v", err)
 	}
 }
+
+func TestLoadAuthLimitOperatorDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.AuthLimitOperatorUsername != "config_center_operator" {
+		t.Fatalf("unexpected operator username %q", cfg.AuthLimitOperatorUsername)
+	}
+	if cfg.AuthLimitServiceName != "配置中心" {
+		t.Fatalf("unexpected service name %q", cfg.AuthLimitServiceName)
+	}
+}

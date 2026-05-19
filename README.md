@@ -24,7 +24,7 @@ cp .env.example .env
 
 ```env
 CONFIG_CENTER_ADDR=:8080
-CONFIG_CENTER_BASE_URL=https://config-center.example.com
+CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com
 
 PG_HOST=127.0.0.1
 PG_PORT=5432
@@ -34,9 +34,16 @@ PG_ADMIN_SECRET=你的PostgreSQL管理员密码
 AUTH_LIMIT_BASE_URL=https://auth-limit.baichengedu.com
 AUTH_LIMIT_ADMIN=授权服务管理员账号
 AUTH_LIMIT_ADMIN_SECRET=授权服务管理员密码
+AUTH_LIMIT_OPERATOR_USERNAME=config_center_operator
+AUTH_LIMIT_OPERATOR_PASSWORD=
+AUTH_LIMIT_SERVICE_CODE=config-service-baichengedu
+AUTH_LIMIT_SERVICE_NAME=配置中心生产服务
+AUTH_LIMIT_APP_NAME=config-service-baichengedu
 ```
 
 `CONFIG_CENTER_BASE_URL` 是注册到 auth-limit 的服务地址，必须是 auth-limit 能访问到的真实公网 HTTPS 地址。不要把 `localhost`、`127.0.0.1`、局域网 IP 或普通 HTTP 地址注册到远端 auth-limit。
+
+`AUTH_LIMIT_ADMIN` 只用于一次性引导：创建配置中心专用 auth-limit 用户、创建角色并分配 `app:manage`、`service:manage`、`limit:manage`、`statistics:read` 权限。服务注册和 APP 创建会使用 `AUTH_LIMIT_OPERATOR_USERNAME` 登录后的 Token，不再直接使用 admin Token 执行业务接入操作。
 
 `.env` 已被 `.gitignore` 忽略，不要提交生产密钥。
 
@@ -94,6 +101,45 @@ go run ./cmd/config-center register-service --env .env
 ```
 
 命令会把 `AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID`、`AUTH_LIMIT_APP_SECRET` 写回 `.env`。
+
+## 宝塔面板部署构建
+
+在 Windows 开发机执行：
+
+```powershell
+.\go_build.ps1
+```
+
+构建产物位于：
+
+```text
+dist/config-center-linux-amd64/
+```
+
+目录内容：
+
+- `config-center`：Linux amd64 静态 Go 二进制，无 CGO 外部依赖。
+- `.env.example`：生产部署环境变量模板，默认使用 `https://config-service.baichengedu.com`。
+- `config-center.service`：systemd 服务示例。
+- `BUILD_INFO.txt`：构建信息和 SHA256。
+
+上传到宝塔建议路径：
+
+```text
+/www/wwwroot/config-center
+```
+
+部署后把 `.env.example` 复制为 `.env`，填写 PostgreSQL 管理员密码和 auth-limit 管理员凭据，然后在服务器执行：
+
+```bash
+chmod +x ./config-center
+./config-center init-db --env .env
+./config-center migrate --env .env
+./config-center register-service --env .env
+./config-center serve --env .env --addr :8080 --migrate
+```
+
+宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到本机 `127.0.0.1:8080`。
 
 ## 启动
 

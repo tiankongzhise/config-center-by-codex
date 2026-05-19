@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,9 +53,10 @@ type LimitResult struct {
 }
 
 type RegisteredService struct {
-	ServiceID string
-	AppID     string
-	AppSecret string
+	ServiceID        string
+	AppID            string
+	AppSecret        string
+	OperatorPassword string
 }
 
 func New(cfg config.Config) *Client {
@@ -86,7 +89,41 @@ func (c *Client) LoginAdmin(ctx context.Context, username, password string) (str
 	return response.Data.AccessToken, nil
 }
 
-func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg config.Config) (RegisteredService, error) {
+type bootstrapResult struct {
+	UserID   string
+	RoleID   string
+	Password string
+}
+
+func (c *Client) BootstrapOperator(ctx context.Context, adminToken string, cfg config.Config) (bootstrapResult, error) {
+	password := cfg.AuthLimitOperatorPassword
+	if password == "" {
+		generated, err := randomPassword()
+		if err != nil {
+			return bootstrapResult{}, err
+		}
+		password = generated
+	}
+
+	userID, err := c.ensureUser(ctx, cfg, password)
+	if err != nil {
+		return bootstrapResult{}, err
+	}
+	permissionIDs, err := c.permissionIDs(ctx, adminToken, []string{"app:manage", "service:manage", "limit:manage", "statistics:read"})
+	if err != nil {
+		return bootstrapResult{}, err
+	}
+	roleID, err := c.ensureRole(ctx, adminToken, cfg, permissionIDs)
+	if err != nil {
+		return bootstrapResult{}, err
+	}
+	if err := c.assignUserRoles(ctx, adminToken, userID, []string{roleID}); err != nil {
+		return bootstrapResult{}, err
+	}
+	return bootstrapResult{UserID: userID, RoleID: roleID, Password: password}, nil
+}
+
+func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg config.Config) (RegisteredService, error) {
 	var servicePayload = map[string]any{
 		"name":                cfg.AuthLimitServiceName,
 		"code":                cfg.AuthLimitServiceCode,
@@ -99,7 +136,7 @@ func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg con
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/api/services", bearer(adminToken), servicePayload, &serviceResponse); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/services", bearer(operatorToken), servicePayload, &serviceResponse); err != nil {
 		return RegisteredService{}, err
 	}
 
@@ -110,7 +147,7 @@ func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg con
 			AppSecret string `json:"appSecret"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/api/apps", bearer(adminToken), appPayload, &appResponse); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/apps", bearer(operatorToken), appPayload, &appResponse); err != nil {
 		return RegisteredService{}, err
 	}
 
@@ -119,6 +156,139 @@ func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg con
 		AppID:     appResponse.Data.AppID,
 		AppSecret: appResponse.Data.AppSecret,
 	}, nil
+}
+
+func (c *Client) ensureUser(ctx context.Context, cfg config.Config, password string) (string, error) {
+	payload := map[string]any{
+		"username":    cfg.AuthLimitOperatorUsername,
+		"password":    password,
+		"displayName": cfg.AuthLimitOperatorDisplayName,
+	}
+	var response struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	err := c.doJSON(ctx, http.MethodPost, "/api/users/register", "", payload, &response)
+	if err == nil {
+		if response.Data.ID == "" {
+			return "", errors.New("auth-limit user register response missing id")
+		}
+		return response.Data.ID, nil
+	}
+	if !isConflict(err) {
+		return "", err
+	}
+	token, err := c.LoginAdmin(ctx, cfg.AuthLimitAdmin, cfg.AuthLimitAdminSecret)
+	if err != nil {
+		return "", err
+	}
+	users, err := c.users(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	for _, user := range users {
+		if strings.EqualFold(user.Username, cfg.AuthLimitOperatorUsername) {
+			return user.ID, nil
+		}
+	}
+	return "", fmt.Errorf("auth-limit operator user %q already exists but cannot be found", cfg.AuthLimitOperatorUsername)
+}
+
+type permissionRecord struct {
+	ID   string `json:"id"`
+	Code string `json:"code"`
+}
+
+func (c *Client) permissionIDs(ctx context.Context, adminToken string, codes []string) ([]string, error) {
+	var response struct {
+		Data []permissionRecord `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/permissions", bearer(adminToken), nil, &response); err != nil {
+		return nil, err
+	}
+	byCode := make(map[string]string, len(response.Data))
+	for _, permission := range response.Data {
+		byCode[permission.Code] = permission.ID
+	}
+	var ids []string
+	for _, code := range codes {
+		id := byCode[code]
+		if id == "" {
+			return nil, fmt.Errorf("auth-limit permission %q not found", code)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+type roleRecord struct {
+	ID   string `json:"id"`
+	Code string `json:"code"`
+}
+
+func (c *Client) ensureRole(ctx context.Context, adminToken string, cfg config.Config, permissionIDs []string) (string, error) {
+	payload := map[string]any{
+		"code":          cfg.AuthLimitOperatorRoleCode,
+		"name":          cfg.AuthLimitOperatorRoleName,
+		"description":   "配置中心服务注册、APP 管理、限流和统计读取专用角色",
+		"permissionIds": permissionIDs,
+	}
+	var response struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	err := c.doJSON(ctx, http.MethodPost, "/api/roles", bearer(adminToken), payload, &response)
+	if err == nil {
+		if response.Data.ID == "" {
+			return "", errors.New("auth-limit role create response missing id")
+		}
+		return response.Data.ID, nil
+	}
+	if !isConflict(err) {
+		return "", err
+	}
+	roles, err := c.roles(ctx, adminToken)
+	if err != nil {
+		return "", err
+	}
+	for _, role := range roles {
+		if role.Code == cfg.AuthLimitOperatorRoleCode {
+			return role.ID, nil
+		}
+	}
+	return "", fmt.Errorf("auth-limit role %q already exists but cannot be found", cfg.AuthLimitOperatorRoleCode)
+}
+
+func (c *Client) assignUserRoles(ctx context.Context, adminToken string, userID string, roleIDs []string) error {
+	payload := map[string]any{"roleIds": roleIDs}
+	return c.doJSON(ctx, http.MethodPut, "/api/users/"+url.PathEscape(userID)+"/roles", bearer(adminToken), payload, nil)
+}
+
+type userRecord struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+func (c *Client) users(ctx context.Context, adminToken string) ([]userRecord, error) {
+	var response struct {
+		Data []userRecord `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/users", bearer(adminToken), nil, &response); err != nil {
+		return nil, err
+	}
+	return response.Data, nil
+}
+
+func (c *Client) roles(ctx context.Context, adminToken string) ([]roleRecord, error) {
+	var response struct {
+		Data []roleRecord `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/roles", bearer(adminToken), nil, &response); err != nil {
+		return nil, err
+	}
+	return response.Data, nil
 }
 
 func (c *Client) VerifyBearer(ctx context.Context, token string) (AuthResult, error) {
@@ -299,4 +469,16 @@ func copyHeader(dst, src http.Header, key string) {
 	if value := src.Get(key); value != "" {
 		dst.Set(key, value)
 	}
+}
+
+func isConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "status=409")
+}
+
+func randomPassword() (string, error) {
+	bytes := make([]byte, 24)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return "Aa1!" + base64.RawURLEncoding.EncodeToString(bytes), nil
 }

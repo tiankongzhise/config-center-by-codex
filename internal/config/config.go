@@ -33,16 +33,21 @@ type Config struct {
 	ConfigDBUser     string
 	ConfigDBPassword string
 
-	AuthLimitBaseURL     string
-	AuthLimitAdmin       string
-	AuthLimitAdminSecret string
-	AuthLimitServiceCode string
-	AuthLimitServiceName string
-	AuthLimitServiceID   string
-	AuthLimitAppName     string
-	AuthLimitAppID       string
-	AuthLimitAppSecret   string
-	AllowLocalServiceURL bool
+	AuthLimitBaseURL             string
+	AuthLimitAdmin               string
+	AuthLimitAdminSecret         string
+	AuthLimitOperatorUsername    string
+	AuthLimitOperatorPassword    string
+	AuthLimitOperatorDisplayName string
+	AuthLimitOperatorRoleCode    string
+	AuthLimitOperatorRoleName    string
+	AuthLimitServiceCode         string
+	AuthLimitServiceName         string
+	AuthLimitServiceID           string
+	AuthLimitAppName             string
+	AuthLimitAppID               string
+	AuthLimitAppSecret           string
+	AllowLocalServiceURL         bool
 }
 
 func Load(path string) (Config, error) {
@@ -78,16 +83,21 @@ func Load(path string) (Config, error) {
 		ConfigDBUser:     get("CONFIG_CENTER_DB_USER", "config_center"),
 		ConfigDBPassword: get("CONFIG_CENTER_DB_PASSWORD", ""),
 
-		AuthLimitBaseURL:     strings.TrimRight(get("AUTH_LIMIT_BASE_URL", defaultAuthLimitBaseURL), "/"),
-		AuthLimitAdmin:       firstNonEmpty(get("AUTH_LIMIT_ADMIN", ""), get("AUTH_SERVICE_ADMIN", "")),
-		AuthLimitAdminSecret: firstNonEmpty(get("AUTH_LIMIT_ADMIN_SECRET", ""), get("AUTH_SERVICE_ADMIN_SECRET", "")),
-		AuthLimitServiceCode: get("AUTH_LIMIT_SERVICE_CODE", "config-center"),
-		AuthLimitServiceName: get("AUTH_LIMIT_SERVICE_NAME", "配置中心"),
-		AuthLimitServiceID:   get("AUTH_LIMIT_SERVICE_ID", ""),
-		AuthLimitAppName:     get("AUTH_LIMIT_APP_NAME", "config-center"),
-		AuthLimitAppID:       get("AUTH_LIMIT_APP_ID", ""),
-		AuthLimitAppSecret:   get("AUTH_LIMIT_APP_SECRET", ""),
-		AllowLocalServiceURL: parseBool(get("ALLOW_LOCAL_SERVICE_URL", "")),
+		AuthLimitBaseURL:             strings.TrimRight(get("AUTH_LIMIT_BASE_URL", defaultAuthLimitBaseURL), "/"),
+		AuthLimitAdmin:               firstNonEmpty(get("AUTH_LIMIT_ADMIN", ""), get("AUTH_SERVICE_ADMIN", "")),
+		AuthLimitAdminSecret:         firstNonEmpty(get("AUTH_LIMIT_ADMIN_SECRET", ""), get("AUTH_SERVICE_ADMIN_SECRET", "")),
+		AuthLimitOperatorUsername:    get("AUTH_LIMIT_OPERATOR_USERNAME", "config_center_operator"),
+		AuthLimitOperatorPassword:    get("AUTH_LIMIT_OPERATOR_PASSWORD", ""),
+		AuthLimitOperatorDisplayName: get("AUTH_LIMIT_OPERATOR_DISPLAY_NAME", "配置中心接入用户"),
+		AuthLimitOperatorRoleCode:    get("AUTH_LIMIT_OPERATOR_ROLE_CODE", "config_center_operator"),
+		AuthLimitOperatorRoleName:    get("AUTH_LIMIT_OPERATOR_ROLE_NAME", "配置中心接入负责人"),
+		AuthLimitServiceCode:         get("AUTH_LIMIT_SERVICE_CODE", "config-center"),
+		AuthLimitServiceName:         get("AUTH_LIMIT_SERVICE_NAME", "配置中心"),
+		AuthLimitServiceID:           get("AUTH_LIMIT_SERVICE_ID", ""),
+		AuthLimitAppName:             get("AUTH_LIMIT_APP_NAME", "config-center"),
+		AuthLimitAppID:               get("AUTH_LIMIT_APP_ID", ""),
+		AuthLimitAppSecret:           get("AUTH_LIMIT_APP_SECRET", ""),
+		AllowLocalServiceURL:         parseBool(get("ALLOW_LOCAL_SERVICE_URL", "")),
 	}
 
 	if cfg.BaseURL == "" {

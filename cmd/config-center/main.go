@@ -73,18 +73,31 @@ func registerService(args []string) error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.RegisterService(ctx, adminToken, cfg)
+	bootstrap, err := client.BootstrapOperator(ctx, adminToken, cfg)
+	if err != nil {
+		return err
+	}
+	operatorToken, err := client.LoginAdmin(ctx, cfg.AuthLimitOperatorUsername, bootstrap.Password)
+	if err != nil {
+		return err
+	}
+	registered, err := client.RegisterService(ctx, operatorToken, cfg)
 	if err != nil {
 		return err
 	}
 	if err := config.UpdateDotEnv(*envPath, map[string]string{
-		"AUTH_LIMIT_BASE_URL":     cfg.AuthLimitBaseURL,
-		"AUTH_LIMIT_SERVICE_CODE": cfg.AuthLimitServiceCode,
-		"AUTH_LIMIT_SERVICE_NAME": cfg.AuthLimitServiceName,
-		"AUTH_LIMIT_SERVICE_ID":   registered.ServiceID,
-		"AUTH_LIMIT_APP_NAME":     cfg.AuthLimitAppName,
-		"AUTH_LIMIT_APP_ID":       registered.AppID,
-		"AUTH_LIMIT_APP_SECRET":   registered.AppSecret,
+		"AUTH_LIMIT_BASE_URL":              cfg.AuthLimitBaseURL,
+		"AUTH_LIMIT_OPERATOR_USERNAME":     cfg.AuthLimitOperatorUsername,
+		"AUTH_LIMIT_OPERATOR_PASSWORD":     bootstrap.Password,
+		"AUTH_LIMIT_OPERATOR_DISPLAY_NAME": cfg.AuthLimitOperatorDisplayName,
+		"AUTH_LIMIT_OPERATOR_ROLE_CODE":    cfg.AuthLimitOperatorRoleCode,
+		"AUTH_LIMIT_OPERATOR_ROLE_NAME":    cfg.AuthLimitOperatorRoleName,
+		"AUTH_LIMIT_SERVICE_CODE":          cfg.AuthLimitServiceCode,
+		"AUTH_LIMIT_SERVICE_NAME":          cfg.AuthLimitServiceName,
+		"AUTH_LIMIT_SERVICE_ID":            registered.ServiceID,
+		"AUTH_LIMIT_APP_NAME":              cfg.AuthLimitAppName,
+		"AUTH_LIMIT_APP_ID":                registered.AppID,
+		"AUTH_LIMIT_APP_SECRET":            registered.AppSecret,
 	}); err != nil {
 		return err
 	}
