@@ -96,5 +96,10 @@ func normalizeProjectInput(name, code, description, publicKey string) (string, s
 	if len(description) > 500 {
 		return "", "", "", "", errors.New("project description must be at most 500 characters")
 	}
+	if publicKey != "" {
+		if err := ValidateRSAPublicKey(publicKey); err != nil {
+			return "", "", "", "", err
+		}
+	}
 	return name, code, description, publicKey, nil
 }

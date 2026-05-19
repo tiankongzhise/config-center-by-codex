@@ -17,6 +17,7 @@ type Server struct {
 	cfg      config.Config
 	auth     *app.Service
 	projects *app.ProjectService
+	configs  *app.ConfigService
 	store    *store.Store
 }
 
@@ -26,6 +27,7 @@ func New(cfg config.Config, store *store.Store) *Server {
 		store:    store,
 		auth:     app.NewService(store),
 		projects: app.NewProjectService(store),
+		configs:  app.NewConfigService(store),
 	}
 }
 
@@ -41,6 +43,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}", s.getProject)
 	mux.HandleFunc("PUT /api/projects/{id}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{id}", s.deleteProject)
+	mux.HandleFunc("GET /api/projects/{id}/config", s.getProjectConfig)
+	mux.HandleFunc("PUT /api/projects/{id}/config", s.saveProjectConfig)
+	mux.HandleFunc("GET /api/projects/{id}/env", s.getProjectEnv)
+	mux.HandleFunc("PUT /api/projects/{id}/env", s.saveProjectEnv)
 	mux.HandleFunc("GET /", s.index)
 	return mux
 }
@@ -191,6 +197,57 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getProjectConfig(w http.ResponseWriter, r *http.Request) {
+	s.getManagedConfig(w, r, "config")
+}
+
+func (s *Server) saveProjectConfig(w http.ResponseWriter, r *http.Request) {
+	s.saveManagedConfig(w, r, "config")
+}
+
+func (s *Server) getProjectEnv(w http.ResponseWriter, r *http.Request) {
+	s.getManagedConfig(w, r, "env")
+}
+
+func (s *Server) saveProjectEnv(w http.ResponseWriter, r *http.Request) {
+	s.saveManagedConfig(w, r, "env")
+}
+
+func (s *Server) getManagedConfig(w http.ResponseWriter, r *http.Request, kind string) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	cfg, err := s.configs.GetForOwner(r.Context(), user, r.PathValue("id"), kind)
+	if err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"config": cfg})
+}
+
+func (s *Server) saveManagedConfig(w http.ResponseWriter, r *http.Request, kind string) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Plaintext string `json:"plaintext"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	cfg, err := s.configs.Save(r.Context(), user, r.PathValue("id"), app.SaveConfigInput{
+		Kind:      kind,
+		Plaintext: input.Plaintext,
+	})
+	if err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"config": cfg})
 }
 
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (app.User, bool) {

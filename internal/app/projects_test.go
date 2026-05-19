@@ -3,11 +3,11 @@ package app
 import "testing"
 
 func TestNormalizeProjectInput(t *testing.T) {
-	name, code, description, publicKey, err := normalizeProjectInput(" Demo ", "demo-service", " desc ", " key ")
+	name, code, description, publicKey, err := normalizeProjectInput(" Demo ", "demo-service", " desc ", "")
 	if err != nil {
 		t.Fatalf("normalize project: %v", err)
 	}
-	if name != "Demo" || code != "demo-service" || description != "desc" || publicKey != "key" {
+	if name != "Demo" || code != "demo-service" || description != "desc" || publicKey != "" {
 		t.Fatalf("unexpected normalized values: %q %q %q %q", name, code, description, publicKey)
 	}
 }

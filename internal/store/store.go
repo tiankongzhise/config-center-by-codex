@@ -204,6 +204,50 @@ func (s *Store) DeleteProject(ctx context.Context, ownerID, projectID string) er
 	return nil
 }
 
+func (s *Store) UpsertProjectConfig(ctx context.Context, cfg app.ProjectConfig) (app.ProjectConfig, error) {
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO project_configs (project_id, kind, ciphertext, content_hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (project_id, kind)
+		DO UPDATE SET ciphertext = EXCLUDED.ciphertext, content_hash = EXCLUDED.content_hash, updated_at = now()
+		RETURNING project_id, kind, ciphertext, content_hash, updated_at
+	`, cfg.ProjectID, cfg.Kind, cfg.Ciphertext, cfg.ContentHash)
+	return scanProjectConfig(row)
+}
+
+func (s *Store) FindProjectConfig(ctx context.Context, projectID, kind string) (app.ProjectConfig, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT project_id, kind, ciphertext, content_hash, updated_at
+		FROM project_configs
+		WHERE project_id = $1 AND kind = $2
+	`, projectID, kind)
+	return scanProjectConfig(row)
+}
+
+func (s *Store) FindProjectConfigByCode(ctx context.Context, code, kind string) (app.Project, app.ProjectConfig, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			p.id, p.owner_id, p.name, p.code, p.description, p.rsa_public_key, p.created_at, p.updated_at,
+			c.project_id, c.kind, c.ciphertext, c.content_hash, c.updated_at
+		FROM projects p
+		JOIN project_configs c ON c.project_id = p.id
+		WHERE p.code = $1 AND c.kind = $2
+	`, code, kind)
+
+	var project app.Project
+	var cfg app.ProjectConfig
+	if err := row.Scan(
+		&project.ID, &project.OwnerID, &project.Name, &project.Code, &project.Description, &project.RSAPublicKey, &project.CreatedAt, &project.UpdatedAt,
+		&cfg.ProjectID, &cfg.Kind, &cfg.Ciphertext, &cfg.ContentHash, &cfg.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return app.Project{}, app.ProjectConfig{}, ErrNotFound
+		}
+		return app.Project{}, app.ProjectConfig{}, err
+	}
+	return project, cfg, nil
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -243,6 +287,17 @@ func scanProject(row scanner) (app.Project, error) {
 		return app.Project{}, err
 	}
 	return project, nil
+}
+
+func scanProjectConfig(row scanner) (app.ProjectConfig, error) {
+	var cfg app.ProjectConfig
+	if err := row.Scan(&cfg.ProjectID, &cfg.Kind, &cfg.Ciphertext, &cfg.ContentHash, &cfg.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return app.ProjectConfig{}, ErrNotFound
+		}
+		return app.ProjectConfig{}, err
+	}
+	return cfg, nil
 }
 
 func isUniqueViolation(err error) bool {

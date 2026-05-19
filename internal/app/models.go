@@ -30,3 +30,11 @@ type Project struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
+
+type ProjectConfig struct {
+	ProjectID   string    `json:"projectId"`
+	Kind        string    `json:"kind"`
+	Ciphertext  string    `json:"ciphertext"`
+	ContentHash string    `json:"contentHash"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
