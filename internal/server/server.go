@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tiankongzhise/config-center-by-codex/internal/app"
+	"github.com/tiankongzhise/config-center-by-codex/internal/authlimit"
 	"github.com/tiankongzhise/config-center-by-codex/internal/config"
 	"github.com/tiankongzhise/config-center-by-codex/internal/store"
 )
@@ -16,6 +19,7 @@ const sessionCookieName = "config_center_session"
 type Server struct {
 	cfg      config.Config
 	auth     *app.Service
+	gateway  *authlimit.Client
 	projects *app.ProjectService
 	configs  *app.ConfigService
 	store    *store.Store
@@ -26,6 +30,7 @@ func New(cfg config.Config, store *store.Store) *Server {
 		cfg:      cfg,
 		store:    store,
 		auth:     app.NewService(store),
+		gateway:  authlimit.New(cfg),
 		projects: app.NewProjectService(store),
 		configs:  app.NewConfigService(store),
 	}
@@ -47,6 +52,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/projects/{id}/config", s.saveProjectConfig)
 	mux.HandleFunc("GET /api/projects/{id}/env", s.getProjectEnv)
 	mux.HandleFunc("PUT /api/projects/{id}/env", s.saveProjectEnv)
+	mux.HandleFunc("GET /api/public/projects/{code}/config", s.getPublicProjectConfig)
+	mux.HandleFunc("GET /api/public/projects/{code}/env", s.getPublicProjectEnv)
 	mux.HandleFunc("GET /", s.index)
 	return mux
 }
@@ -250,6 +257,100 @@ func (s *Server) saveManagedConfig(w http.ResponseWriter, r *http.Request, kind 
 	writeJSON(w, http.StatusOK, map[string]any{"config": cfg})
 }
 
+func (s *Server) getPublicProjectConfig(w http.ResponseWriter, r *http.Request) {
+	s.getPublicConfig(w, r, "config")
+}
+
+func (s *Server) getPublicProjectEnv(w http.ResponseWriter, r *http.Request) {
+	s.getPublicConfig(w, r, "env")
+}
+
+func (s *Server) getPublicConfig(w http.ResponseWriter, r *http.Request, kind string) {
+	authResult, ok := s.verifyExternalCaller(w, r)
+	if !ok {
+		return
+	}
+	limitResult, ok := s.verifyExternalLimit(w, r, authResult)
+	if !ok {
+		return
+	}
+
+	project, cfg, err := s.configs.GetByProjectCode(r.Context(), r.PathValue("code"), kind)
+	if err != nil {
+		writeStoreOrValidationError(w, err, "")
+		return
+	}
+	if limitResult.Remaining >= 0 {
+		w.Header().Set("X-RateLimit-Remaining", intToString(limitResult.Remaining))
+	}
+	if limitResult.ResetAt > 0 {
+		w.Header().Set("X-RateLimit-Reset", int64ToString(limitResult.ResetAt))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"project": map[string]any{
+			"code": project.Code,
+			"name": project.Name,
+		},
+		"config": cfg,
+	})
+}
+
+func (s *Server) verifyExternalCaller(w http.ResponseWriter, r *http.Request) (authlimit.AuthResult, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		result, err := s.gateway.VerifyBearer(r.Context(), strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")))
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "auth-limit bearer verification failed")
+			return authlimit.AuthResult{}, false
+		}
+		return result, true
+	}
+	if r.Header.Get("appId") != "" && r.Header.Get("timestamp") != "" && r.Header.Get("sign") != "" {
+		result, err := s.gateway.VerifyM2M(r.Context(), r.Header, r.URL.Path, map[string]any{
+			"projectCode": r.PathValue("code"),
+			"kind":        pathKind(r.URL.Path),
+		})
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "auth-limit m2m verification failed")
+			return authlimit.AuthResult{}, false
+		}
+		return result, true
+	}
+	writeError(w, http.StatusUnauthorized, "external caller credential is required")
+	return authlimit.AuthResult{}, false
+}
+
+func (s *Server) verifyExternalLimit(w http.ResponseWriter, r *http.Request, caller authlimit.AuthResult) (authlimit.LimitResult, bool) {
+	if s.cfg.AuthLimitServiceID == "" {
+		writeError(w, http.StatusServiceUnavailable, "AUTH_LIMIT_SERVICE_ID is not configured")
+		return authlimit.LimitResult{}, false
+	}
+	result, err := s.gateway.VerifyLimit(r.Context(), authlimit.LimitRequest{
+		ServiceID: s.cfg.AuthLimitServiceID,
+		Path:      r.URL.Path,
+		Method:    r.Method,
+		IP:        clientIP(r),
+		UserID:    caller.UserID,
+		AppID:     caller.AppID,
+	})
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "auth-limit limit verification failed")
+		return authlimit.LimitResult{}, false
+	}
+	if !result.Allowed {
+		if result.RetryAfter != "" {
+			w.Header().Set("Retry-After", result.RetryAfter)
+		}
+		status := result.StatusCode
+		if status == 0 {
+			status = http.StatusTooManyRequests
+		}
+		writeError(w, status, "request is limited")
+		return authlimit.LimitResult{}, false
+	}
+	return result, true
+}
+
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (app.User, bool) {
 	user, err := s.auth.CurrentUser(r.Context(), sessionToken(r))
 	if err != nil {
@@ -329,4 +430,34 @@ func writeStoreOrValidationError(w http.ResponseWriter, err error, conflictMessa
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
 	}
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+	host, _, ok := strings.Cut(r.RemoteAddr, ":")
+	if ok {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func pathKind(path string) string {
+	if strings.HasSuffix(path, "/env") {
+		return "env"
+	}
+	return "config"
+}
+
+func intToString(value int) string {
+	return int64ToString(int64(value))
+}
+
+func int64ToString(value int64) string {
+	return strconv.FormatInt(value, 10)
 }
