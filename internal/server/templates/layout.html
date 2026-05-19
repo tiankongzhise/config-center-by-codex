@@ -1,0 +1,32 @@
+{{define "layout_start"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} - 配置中心</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+{{end}}
+
+{{define "topbar"}}
+<header class="topbar">
+  <a class="brand" href="/projects">配置中心</a>
+  <nav>
+    <span>{{.User.DisplayName}}</span>
+    <button id="logoutButton" class="ghost" type="button">退出</button>
+  </nav>
+</header>
+<script>
+document.querySelector("#logoutButton")?.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  location.href = "/login";
+});
+</script>
+{{end}}
+
+{{define "layout_end"}}
+</body>
+</html>
+{{end}}

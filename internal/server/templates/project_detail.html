@@ -1,0 +1,64 @@
+{{template "layout_start" .}}
+{{template "topbar" .}}
+<main class="page">
+  <section class="page-head">
+    <div>
+      <h1>{{.Project.Name}}</h1>
+      <p>{{.Project.Code}}</p>
+    </div>
+    <a class="button secondary" href="/projects">返回</a>
+  </section>
+  <section class="grid">
+    <form id="metaForm" class="panel form">
+      <h2>项目信息</h2>
+      <label>项目名称<input name="name" value="{{.Project.Name}}" required></label>
+      <label>描述<textarea name="description" rows="3">{{.Project.Description}}</textarea></label>
+      <label>RSA 公钥<textarea name="rsaPublicKey" rows="8">{{.Project.RSAPublicKey}}</textarea></label>
+      <button type="submit">保存项目</button>
+      <p id="metaMessage" class="message"></p>
+    </form>
+    <section class="panel">
+      <h2>对外读取地址</h2>
+      <div class="copy-line">{{.PublicURL}}/config</div>
+      <div class="copy-line">{{.PublicURL}}/env</div>
+      <p class="muted">外部读取需要通过 auth-limit 的 Bearer 或 M2M 鉴权。</p>
+    </section>
+  </section>
+  <section class="grid">
+    <form class="panel form config-form" data-kind="config">
+      <h2>config</h2>
+      <textarea name="plaintext" rows="10" placeholder="输入 config 明文，保存后数据库只保留密文"></textarea>
+      <button type="submit">加密保存 config</button>
+      <p class="muted">当前密文哈希：{{.Config.ContentHash}}</p>
+      <p class="message"></p>
+    </form>
+    <form class="panel form config-form" data-kind="env">
+      <h2>env</h2>
+      <textarea name="plaintext" rows="10" placeholder="输入 env 明文，保存后数据库只保留密文"></textarea>
+      <button type="submit">加密保存 env</button>
+      <p class="muted">当前密文哈希：{{.Env.ContentHash}}</p>
+      <p class="message"></p>
+    </form>
+  </section>
+</main>
+<script>
+const projectId = "{{.Project.ID}}";
+document.querySelector("#metaForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target).entries());
+  const response = await fetch(`/api/projects/${projectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  const body = await response.json().catch(() => ({}));
+  document.querySelector("#metaMessage").textContent = response.ok ? "已保存" : (body.error || "保存失败");
+});
+document.querySelectorAll(".config-form").forEach((form) => {
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const kind = form.dataset.kind;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const response = await fetch(`/api/projects/${projectId}/${kind}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const body = await response.json().catch(() => ({}));
+    form.querySelector(".message").textContent = response.ok ? `已加密保存 ${kind}` : (body.error || "保存失败");
+  });
+});
+</script>
+{{template "layout_end" .}}

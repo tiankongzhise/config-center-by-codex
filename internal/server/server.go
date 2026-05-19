@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ type Server struct {
 	projects *app.ProjectService
 	configs  *app.ConfigService
 	store    *store.Store
+	views    *template.Template
 }
 
 func New(cfg config.Config, store *store.Store) *Server {
@@ -33,12 +35,19 @@ func New(cfg config.Config, store *store.Store) *Server {
 		gateway:  authlimit.New(cfg),
 		projects: app.NewProjectService(store),
 		configs:  app.NewConfigService(store),
+		views:    template.Must(template.ParseFS(templatesFS, "templates/*.html")),
 	}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.health)
+	mux.HandleFunc("GET /static/styles.css", s.styles)
+	mux.HandleFunc("GET /login", s.loginPage)
+	mux.HandleFunc("GET /register", s.registerPage)
+	mux.HandleFunc("GET /projects", s.projectsPage)
+	mux.HandleFunc("GET /projects/new", s.newProjectPage)
+	mux.HandleFunc("GET /projects/{id}", s.projectPage)
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
@@ -66,7 +75,70 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/health", http.StatusFound)
+	http.Redirect(w, r, "/projects", http.StatusFound)
+}
+
+func (s *Server) styles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	http.ServeFileFS(w, r, assetsFS, "assets/styles.css")
+}
+
+func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "login.html", map[string]any{"Title": "登录"})
+}
+
+func (s *Server) registerPage(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "register.html", map[string]any{"Title": "注册"})
+}
+
+func (s *Server) projectsPage(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUserPage(w, r)
+	if !ok {
+		return
+	}
+	projects, err := s.projects.List(r.Context(), user)
+	if err != nil {
+		http.Error(w, "加载项目失败", http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "projects.html", map[string]any{
+		"Title":    "项目",
+		"User":     user,
+		"Projects": projects,
+	})
+}
+
+func (s *Server) newProjectPage(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUserPage(w, r)
+	if !ok {
+		return
+	}
+	s.render(w, "project_new.html", map[string]any{
+		"Title": "新建项目",
+		"User":  user,
+	})
+}
+
+func (s *Server) projectPage(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUserPage(w, r)
+	if !ok {
+		return
+	}
+	project, err := s.projects.Get(r.Context(), user, r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	configValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "config")
+	envValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "env")
+	s.render(w, "project_detail.html", map[string]any{
+		"Title":     project.Name,
+		"User":      user,
+		"Project":   project,
+		"Config":    configValue,
+		"Env":       envValue,
+		"PublicURL": strings.TrimRight(s.cfg.BaseURL, "/") + "/api/public/projects/" + project.Code,
+	})
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
@@ -360,6 +432,15 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (app.User, 
 	return user, true
 }
 
+func (s *Server) requireUserPage(w http.ResponseWriter, r *http.Request) (app.User, bool) {
+	user, err := s.auth.CurrentUser(r.Context(), sessionToken(r))
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return app.User{}, false
+	}
+	return user, true
+}
+
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -429,6 +510,13 @@ func writeStoreOrValidationError(w http.ResponseWriter, err error, conflictMessa
 		writeError(w, http.StatusNotFound, "resource not found")
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
+func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.views.ExecuteTemplate(w, name, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 

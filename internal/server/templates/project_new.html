@@ -1,0 +1,26 @@
+{{template "layout_start" .}}
+{{template "topbar" .}}
+<main class="page narrow">
+  <section class="panel">
+    <h1>新建项目</h1>
+    <form id="projectForm" class="form">
+      <label>项目名称<input name="name" required></label>
+      <label>项目编码<input name="code" pattern="[a-z][a-z0-9-]{2,62}" required></label>
+      <label>描述<textarea name="description" rows="3"></textarea></label>
+      <label>RSA 公钥<textarea name="rsaPublicKey" rows="8" placeholder="-----BEGIN PUBLIC KEY-----"></textarea></label>
+      <button type="submit">创建</button>
+      <p id="message" class="message"></p>
+    </form>
+  </section>
+</main>
+<script>
+document.querySelector("#projectForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target).entries());
+  const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  const body = await response.json().catch(() => ({}));
+  if (response.ok) location.href = `/projects/${body.project.id}`;
+  else document.querySelector("#message").textContent = body.error || "创建失败";
+});
+</script>
+{{template "layout_end" .}}

@@ -1,0 +1,185 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: #f5f7fb;
+  color: #20242a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: #0b6bcb;
+  text-decoration: none;
+}
+
+.topbar {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid #dfe5ee;
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 28px;
+}
+
+.brand {
+  color: #161a1f;
+  font-weight: 700;
+}
+
+.topbar nav {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  width: min(420px, 100%);
+}
+
+.page {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 28px;
+}
+
+.narrow {
+  max-width: 760px;
+}
+
+.page-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dfe5ee;
+  border-radius: 8px;
+  padding: 22px;
+}
+
+.grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.list {
+  background: #ffffff;
+  border: 1px solid #dfe5ee;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.row {
+  border-bottom: 1px solid #edf1f6;
+  color: inherit;
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row span,
+.muted,
+.empty,
+.row small {
+  color: #687385;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+label {
+  display: grid;
+  font-size: 14px;
+  gap: 6px;
+}
+
+input,
+textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button,
+.button {
+  background: #1368d8;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 600;
+  justify-content: center;
+  padding: 10px 16px;
+}
+
+.secondary,
+.ghost {
+  background: #eef3f8;
+  color: #1f2937;
+}
+
+.ghost {
+  padding: 8px 12px;
+}
+
+.message {
+  color: #b42318;
+  min-height: 20px;
+}
+
+.copy-line {
+  background: #f5f7fb;
+  border: 1px solid #dfe5ee;
+  border-radius: 6px;
+  font-family: Consolas, monospace;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+  padding: 10px;
+}
+
+@media (max-width: 760px) {
+  .grid,
+  .page-head {
+    display: block;
+  }
+
+  .page-head .button {
+    margin-top: 12px;
+  }
+
+  .panel {
+    margin-bottom: 16px;
+  }
+}

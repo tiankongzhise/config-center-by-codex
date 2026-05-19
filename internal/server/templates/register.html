@@ -1,0 +1,30 @@
+{{template "layout_start" .}}
+<main class="auth-shell">
+  <section class="panel auth-panel">
+    <h1>注册账号</h1>
+    <p>账号只保存在配置中心数据库中。</p>
+    <form id="registerForm" class="form">
+      <label>用户名<input name="username" autocomplete="username" required></label>
+      <label>显示名<input name="displayName" autocomplete="name"></label>
+      <label>密码<input name="password" type="password" autocomplete="new-password" required></label>
+      <button type="submit">注册</button>
+      <p class="muted">已有账号？<a href="/login">去登录</a></p>
+      <p id="message" class="message"></p>
+    </form>
+  </section>
+</main>
+<script>
+document.querySelector("#registerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target).entries());
+  const response = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    document.querySelector("#message").textContent = body.error || "注册失败";
+    return;
+  }
+  const login = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: data.username, password: data.password }) });
+  location.href = login.ok ? "/projects" : "/login";
+});
+</script>
+{{template "layout_end" .}}

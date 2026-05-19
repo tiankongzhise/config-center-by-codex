@@ -1,0 +1,23 @@
+{{template "layout_start" .}}
+{{template "topbar" .}}
+<main class="page">
+  <section class="page-head">
+    <div>
+      <h1>项目</h1>
+      <p>每个项目使用自己的 RSA 公钥加密配置。</p>
+    </div>
+    <a class="button" href="/projects/new">新建项目</a>
+  </section>
+  <section class="list">
+    {{range .Projects}}
+    <a class="row" href="/projects/{{.ID}}">
+      <strong>{{.Name}}</strong>
+      <span>{{.Code}}</span>
+      <small>{{.Description}}</small>
+    </a>
+    {{else}}
+    <div class="empty">还没有项目。</div>
+    {{end}}
+  </section>
+</main>
+{{template "layout_end" .}}
