@@ -3,6 +3,8 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -40,6 +42,7 @@ type Config struct {
 	AuthLimitAppName     string
 	AuthLimitAppID       string
 	AuthLimitAppSecret   string
+	AllowLocalServiceURL bool
 }
 
 func Load(path string) (Config, error) {
@@ -84,6 +87,7 @@ func Load(path string) (Config, error) {
 		AuthLimitAppName:     get("AUTH_LIMIT_APP_NAME", "config-center"),
 		AuthLimitAppID:       get("AUTH_LIMIT_APP_ID", ""),
 		AuthLimitAppSecret:   get("AUTH_LIMIT_APP_SECRET", ""),
+		AllowLocalServiceURL: parseBool(get("ALLOW_LOCAL_SERVICE_URL", "")),
 	}
 
 	if cfg.BaseURL == "" {
@@ -102,6 +106,27 @@ func Load(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (cfg Config) ValidatePublicServiceURL() error {
+	parsed, err := url.Parse(cfg.BaseURL)
+	if err != nil {
+		return fmt.Errorf("CONFIG_CENTER_BASE_URL is invalid: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		if cfg.AllowLocalServiceURL {
+			return nil
+		}
+		return fmt.Errorf("CONFIG_CENTER_BASE_URL must be a public https URL before registering to auth-limit, got %q", cfg.BaseURL)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("CONFIG_CENTER_BASE_URL must include a host")
+	}
+	if isLocalHost(host) && !cfg.AllowLocalServiceURL {
+		return fmt.Errorf("CONFIG_CENTER_BASE_URL must not be localhost or a private address before registering to auth-limit, got %q", cfg.BaseURL)
+	}
+	return nil
 }
 
 func readDotEnv(path string) (map[string]string, error) {
@@ -225,6 +250,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parseBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLocalHost(host string) bool {
+	lower := strings.ToLower(host)
+	if lower == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
 
 func urlEscape(value string) string {

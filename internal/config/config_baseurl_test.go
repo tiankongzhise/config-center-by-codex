@@ -19,3 +19,17 @@ func TestLoadReadsConfigCenterBaseURL(t *testing.T) {
 		t.Fatalf("unexpected base url %q", cfg.BaseURL)
 	}
 }
+
+func TestValidatePublicServiceURLRejectsLocalhost(t *testing.T) {
+	cfg := Config{BaseURL: "http://127.0.0.1:18080"}
+	if err := cfg.ValidatePublicServiceURL(); err == nil {
+		t.Fatal("expected local http service url to be rejected")
+	}
+}
+
+func TestValidatePublicServiceURLAllowsHTTPS(t *testing.T) {
+	cfg := Config{BaseURL: "https://config-center.example.com"}
+	if err := cfg.ValidatePublicServiceURL(); err != nil {
+		t.Fatalf("expected public https url to pass: %v", err)
+	}
+}

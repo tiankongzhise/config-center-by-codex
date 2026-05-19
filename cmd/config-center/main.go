@@ -63,6 +63,9 @@ func registerService(args []string) error {
 	if cfg.AuthLimitAdmin == "" || cfg.AuthLimitAdminSecret == "" {
 		return errors.New("AUTH_LIMIT_ADMIN/AUTH_SERVICE_ADMIN and AUTH_LIMIT_ADMIN_SECRET/AUTH_SERVICE_ADMIN_SECRET are required")
 	}
+	if err := cfg.ValidatePublicServiceURL(); err != nil {
+		return err
+	}
 
 	client := authlimit.New(cfg)
 	ctx := context.Background()

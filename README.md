@@ -24,7 +24,7 @@ cp .env.example .env
 
 ```env
 CONFIG_CENTER_ADDR=:8080
-CONFIG_CENTER_BASE_URL=http://localhost:8080
+CONFIG_CENTER_BASE_URL=https://config-center.example.com
 
 PG_HOST=127.0.0.1
 PG_PORT=5432
@@ -36,7 +36,34 @@ AUTH_LIMIT_ADMIN=授权服务管理员账号
 AUTH_LIMIT_ADMIN_SECRET=授权服务管理员密码
 ```
 
+`CONFIG_CENTER_BASE_URL` 是注册到 auth-limit 的服务地址，必须是 auth-limit 能访问到的真实公网 HTTPS 地址。不要把 `localhost`、`127.0.0.1`、局域网 IP 或普通 HTTP 地址注册到远端 auth-limit。
+
 `.env` 已被 `.gitignore` 忽略，不要提交生产密钥。
+
+## Windows 本地联调
+
+Windows 本地开发时，远端 auth-limit 无法访问你的 `localhost`。要完成真实联调，需要先给本地服务建立公网 HTTPS 隧道，再把隧道地址写入 `CONFIG_CENTER_BASE_URL`。
+
+可选方式：
+
+- Cloudflare Tunnel：`cloudflared tunnel --url http://127.0.0.1:8080`
+- ngrok：`ngrok http 8080`
+- frp：把本机 8080 映射到具备 HTTPS 的公网域名
+
+拿到类似 `https://xxxx.trycloudflare.com` 或自己的 HTTPS 域名后：
+
+```env
+CONFIG_CENTER_ADDR=:8080
+CONFIG_CENTER_BASE_URL=https://xxxx.trycloudflare.com
+```
+
+然后再执行：
+
+```bash
+go run ./cmd/config-center register-service --env .env
+```
+
+`register-service` 默认会拒绝本地地址，避免把远端 auth-limit 永远访问不到的地址注册进去。只有完全离线的本地实验才可以设置 `ALLOW_LOCAL_SERVICE_URL=true`，但这种模式不能算 auth-limit 真实联调。
 
 ## 初始化
 
@@ -100,14 +127,14 @@ http://localhost:8080
 读取 config：
 
 ```bash
-curl -sS "http://localhost:8080/api/public/projects/<PROJECT_CODE>/config" \
+curl -sS "https://config-center.example.com/api/public/projects/<PROJECT_CODE>/config" \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
 读取 env：
 
 ```bash
-curl -sS "http://localhost:8080/api/public/projects/<PROJECT_CODE>/env" \
+curl -sS "https://config-center.example.com/api/public/projects/<PROJECT_CODE>/env" \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
