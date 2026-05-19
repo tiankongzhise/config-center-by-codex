@@ -15,6 +15,7 @@ import (
 	"github.com/tiankongzhise/config-center-by-codex/internal/config"
 	"github.com/tiankongzhise/config-center-by-codex/internal/db"
 	"github.com/tiankongzhise/config-center-by-codex/internal/server"
+	"github.com/tiankongzhise/config-center-by-codex/internal/store"
 )
 
 func main() {
@@ -117,7 +118,16 @@ func serve(args []string) error {
 		cfg.Addr = *addr
 	}
 
-	app := server.New(cfg)
+	appStore, err := store.Open(cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer appStore.Close()
+	if err := appStore.Ping(context.Background()); err != nil {
+		return err
+	}
+
+	app := server.New(cfg, appStore)
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           app.Routes(),
