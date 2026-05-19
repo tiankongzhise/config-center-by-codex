@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tiankongzhise/config-center-by-codex/internal/config"
+	"github.com/tiankongzhise/config-center-by-codex/internal/db"
 	"github.com/tiankongzhise/config-center-by-codex/internal/server"
 )
 
@@ -32,7 +33,11 @@ func run(args []string) error {
 	switch args[0] {
 	case "serve":
 		return serve(args[1:])
-	case "init-db", "migrate", "register-service":
+	case "init-db":
+		return initDB(args[1:])
+	case "migrate":
+		return migrateDB(args[1:])
+	case "register-service":
 		return fmt.Errorf("%s command is not implemented yet", args[0])
 	case "-h", "--help", "help":
 		printHelp()
@@ -40,6 +45,54 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func initDB(args []string) error {
+	fs := flag.NewFlagSet("init-db", flag.ContinueOnError)
+	envPath := fs.String("env", ".env", "path to dotenv file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*envPath)
+	if err != nil {
+		return err
+	}
+
+	updated, err := db.EnsureDatabaseAndUser(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+
+	if err := config.UpdateDotEnv(*envPath, map[string]string{
+		"CONFIG_CENTER_DB_NAME":     updated.ConfigDBName,
+		"CONFIG_CENTER_DB_USER":     updated.ConfigDBUser,
+		"CONFIG_CENTER_DB_PASSWORD": updated.ConfigDBPassword,
+	}); err != nil {
+		return err
+	}
+
+	slog.Info("database and dedicated user are ready", "database", updated.ConfigDBName, "user", updated.ConfigDBUser)
+	return nil
+}
+
+func migrateDB(args []string) error {
+	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	envPath := fs.String("env", ".env", "path to dotenv file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*envPath)
+	if err != nil {
+		return err
+	}
+	if err := db.Migrate(context.Background(), cfg.DatabaseURL); err != nil {
+		return err
+	}
+
+	slog.Info("database migrations completed")
+	return nil
 }
 
 func serve(args []string) error {
@@ -50,13 +103,15 @@ func serve(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *migrate {
-		return errors.New("--migrate will be available after database migration support is implemented")
-	}
 
 	cfg, err := config.Load(*envPath)
 	if err != nil {
 		return err
+	}
+	if *migrate {
+		if err := db.Migrate(context.Background(), cfg.DatabaseURL); err != nil {
+			return err
+		}
 	}
 	if *addr != "" {
 		cfg.Addr = *addr

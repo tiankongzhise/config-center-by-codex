@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -121,6 +122,90 @@ func readDotEnv(path string) (map[string]string, error) {
 		}
 	}
 	return values, scanner.Err()
+}
+
+func UpdateDotEnv(path string, updates map[string]string) error {
+	lines, err := readDotEnvLines(path)
+	if err != nil {
+		return err
+	}
+
+	seen := make(map[string]bool, len(updates))
+	for index, line := range lines {
+		key, _, ok := parseEnvLine(line)
+		if !ok {
+			continue
+		}
+		value, exists := updates[key]
+		if !exists {
+			continue
+		}
+		lines[index] = key + "=" + quoteEnvValue(value)
+		seen[key] = true
+	}
+
+	var missing []string
+	for key := range updates {
+		if !seen[key] {
+			missing = append(missing, key)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 && len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+		lines = append(lines, "")
+	}
+	for _, key := range missing {
+		lines = append(lines, key+"="+quoteEnvValue(updates[key]))
+	}
+
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func readDotEnvLines(path string) ([]string, error) {
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	content := strings.ReplaceAll(string(bytes), "\r\n", "\n")
+	content = strings.TrimSuffix(content, "\n")
+	if content == "" {
+		return nil, nil
+	}
+	return strings.Split(content, "\n"), nil
+}
+
+func parseEnvLine(line string) (string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return "", "", false
+	}
+	key, value, ok := strings.Cut(trimmed, "=")
+	if !ok {
+		return "", "", false
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", "", false
+	}
+	return key, strings.Trim(strings.TrimSpace(value), `"'`), true
+}
+
+func quoteEnvValue(value string) string {
+	if value == "" {
+		return `""`
+	}
+	if strings.ContainsAny(value, " #\"'") {
+		escaped := strings.ReplaceAll(value, `"`, `\"`)
+		return `"` + escaped + `"`
+	}
+	return value
 }
 
 func firstNonEmpty(values ...string) string {
