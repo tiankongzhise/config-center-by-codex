@@ -1,9 +1,158 @@
 # config-center-by-codex
-一个go语言写的简单UI，以pgsql为数据库。实现用户注册隔离，新建项目，配置config和env两个功能。config和env使用项目方提供的RSA公钥加密存储在数据库中，不存储明文。每个注册用户只能管理自己新建的项目。鉴权通过后，可以对外提供config,env配置。由获取方通过自己私钥解密。
 
-依据docs下的api-usage-guide.md 进行鉴权和限流 该分支已经有一个可以服务的节点auth-limit.baichengedu.com
-需要完成用户注册，服务注册等。如果需要审批。已经将授权服务的admin账号机密信息放在.env中
+配置中心是一个 Go 单体应用，提供本地用户注册登录、项目隔离、RSA 加密配置存储、Web UI、管理 API 和对外配置读取 API。配置中心用户信息保存在自己的 PostgreSQL 数据库中；auth-limit 只用于外部读取配置时的鉴权、限流和服务治理。
 
-pgsql的postgre账号信息也已经放在.env中。需要为服务注册中心单独创建一个数据库，创建一个用户。该用户只管理配置中心这一个数据库。无法连接和管理其他数据库。后续的初始化之类的都使用专用账户进行。
+## 功能
 
-将注册好的相关机密信息写入.env中保存好。
+- 本地用户注册、登录、登出和会话 cookie。
+- 每个用户只能管理自己创建的项目。
+- 每个项目维护独立 RSA 公钥。
+- `config` 和 `env` 写入前使用项目 RSA 公钥加密，数据库不保存明文。
+- 外部读取接口返回密文，由调用方使用自己的私钥解密。
+- 对外读取接口接入 auth-limit Bearer/M2M 鉴权和限流。
+- 提供 PostgreSQL 专用数据库和专用用户初始化命令。
+
+## 准备配置
+
+复制示例配置：
+
+```bash
+cp .env.example .env
+```
+
+填写 `.env`：
+
+```env
+CONFIG_CENTER_ADDR=:8080
+CONFIG_CENTER_BASE_URL=http://localhost:8080
+
+PG_HOST=127.0.0.1
+PG_PORT=5432
+PG_ADMIN=postgres
+PG_ADMIN_SECRET=你的PostgreSQL管理员密码
+
+AUTH_LIMIT_BASE_URL=https://auth-limit.baichengedu.com
+AUTH_LIMIT_ADMIN=授权服务管理员账号
+AUTH_LIMIT_ADMIN_SECRET=授权服务管理员密码
+```
+
+`.env` 已被 `.gitignore` 忽略，不要提交生产密钥。
+
+## 初始化
+
+创建配置中心专用数据库和专用用户：
+
+```bash
+go run ./cmd/config-center init-db --env .env
+```
+
+命令会在 `.env` 中写入：
+
+```env
+CONFIG_CENTER_DB_NAME=config_center
+CONFIG_CENTER_DB_USER=config_center
+CONFIG_CENTER_DB_PASSWORD=自动生成或已有密码
+```
+
+执行数据库迁移：
+
+```bash
+go run ./cmd/config-center migrate --env .env
+```
+
+注册到 auth-limit：
+
+```bash
+go run ./cmd/config-center register-service --env .env
+```
+
+命令会把 `AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID`、`AUTH_LIMIT_APP_SECRET` 写回 `.env`。
+
+## 启动
+
+```bash
+go run ./cmd/config-center serve --env .env --addr :8080
+```
+
+也可以启动前自动迁移：
+
+```bash
+go run ./cmd/config-center serve --env .env --addr :8080 --migrate
+```
+
+浏览器访问：
+
+```text
+http://localhost:8080
+```
+
+## 使用流程
+
+1. 打开 `/register` 注册配置中心本地账号。
+2. 登录后进入项目列表。
+3. 新建项目，填写项目名称、编码和 RSA 公钥。
+4. 在项目详情页保存 `config` 和 `env` 明文。
+5. 服务端立即加密保存，只在数据库中保留密文和内容哈希。
+6. 外部调用方通过 auth-limit 鉴权后读取密文配置。
+
+## 对外读取接口
+
+读取 config：
+
+```bash
+curl -sS "http://localhost:8080/api/public/projects/<PROJECT_CODE>/config" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+读取 env：
+
+```bash
+curl -sS "http://localhost:8080/api/public/projects/<PROJECT_CODE>/env" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+M2M 调用方也可以按 `docs/api-usage-guide.md` 中的签名规则传递：
+
+```http
+appId: <APP_ID>
+timestamp: <UNIX_SECONDS>
+sign: <SIGN>
+```
+
+鉴权和限流都通过后，响应示例：
+
+```json
+{
+  "project": {
+    "code": "demo-service",
+    "name": "Demo Service"
+  },
+  "config": {
+    "projectId": "...",
+    "kind": "config",
+    "ciphertext": "...",
+    "contentHash": "...",
+    "updatedAt": "2026-05-19T12:00:00Z"
+  }
+}
+```
+
+## 常用命令
+
+```bash
+go test ./...
+go run ./cmd/config-center init-db --env .env
+go run ./cmd/config-center migrate --env .env
+go run ./cmd/config-center register-service --env .env
+go run ./cmd/config-center serve --env .env --addr :8080 --migrate
+```
+
+## 文档
+
+- `docs/architecture.md`：架构和安全边界。
+- `docs/database.md`：数据库和迁移设计。
+- `docs/auth-limit-integration.md`：auth-limit 接入说明。
+- `docs/development.md`：开发和提交流程。
+- `docs/api-usage-guide.md`：auth-limit API 使用说明。
+
+原始需求已归档到 `原始需求.md`。
