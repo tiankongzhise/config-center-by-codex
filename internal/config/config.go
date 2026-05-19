@@ -34,7 +34,10 @@ type Config struct {
 	AuthLimitBaseURL     string
 	AuthLimitAdmin       string
 	AuthLimitAdminSecret string
+	AuthLimitServiceCode string
+	AuthLimitServiceName string
 	AuthLimitServiceID   string
+	AuthLimitAppName     string
 	AuthLimitAppID       string
 	AuthLimitAppSecret   string
 }
@@ -75,7 +78,10 @@ func Load(path string) (Config, error) {
 		AuthLimitBaseURL:     strings.TrimRight(get("AUTH_LIMIT_BASE_URL", defaultAuthLimitBaseURL), "/"),
 		AuthLimitAdmin:       firstNonEmpty(get("AUTH_LIMIT_ADMIN", ""), get("AUTH_SERVICE_ADMIN", "")),
 		AuthLimitAdminSecret: firstNonEmpty(get("AUTH_LIMIT_ADMIN_SECRET", ""), get("AUTH_SERVICE_ADMIN_SECRET", "")),
+		AuthLimitServiceCode: get("AUTH_LIMIT_SERVICE_CODE", "config-center"),
+		AuthLimitServiceName: get("AUTH_LIMIT_SERVICE_NAME", "配置中心"),
 		AuthLimitServiceID:   get("AUTH_LIMIT_SERVICE_ID", ""),
+		AuthLimitAppName:     get("AUTH_LIMIT_APP_NAME", "config-center"),
 		AuthLimitAppID:       get("AUTH_LIMIT_APP_ID", ""),
 		AuthLimitAppSecret:   get("AUTH_LIMIT_APP_SECRET", ""),
 	}

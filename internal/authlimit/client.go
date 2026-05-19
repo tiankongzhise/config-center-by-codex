@@ -88,8 +88,8 @@ func (c *Client) LoginAdmin(ctx context.Context, username, password string) (str
 
 func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg config.Config) (RegisteredService, error) {
 	var servicePayload = map[string]any{
-		"name":                "配置中心",
-		"code":                "config-center",
+		"name":                cfg.AuthLimitServiceName,
+		"code":                cfg.AuthLimitServiceCode,
 		"baseUrl":             cfg.BaseURL,
 		"healthPath":          "/health",
 		"healthCheckInterval": 30,
@@ -103,7 +103,7 @@ func (c *Client) RegisterService(ctx context.Context, adminToken string, cfg con
 		return RegisteredService{}, err
 	}
 
-	var appPayload = map[string]any{"name": "config-center"}
+	var appPayload = map[string]any{"name": cfg.AuthLimitAppName}
 	var appResponse struct {
 		Data struct {
 			AppID     string `json:"appId"`

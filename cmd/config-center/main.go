@@ -75,10 +75,13 @@ func registerService(args []string) error {
 		return err
 	}
 	if err := config.UpdateDotEnv(*envPath, map[string]string{
-		"AUTH_LIMIT_BASE_URL":   cfg.AuthLimitBaseURL,
-		"AUTH_LIMIT_SERVICE_ID": registered.ServiceID,
-		"AUTH_LIMIT_APP_ID":     registered.AppID,
-		"AUTH_LIMIT_APP_SECRET": registered.AppSecret,
+		"AUTH_LIMIT_BASE_URL":     cfg.AuthLimitBaseURL,
+		"AUTH_LIMIT_SERVICE_CODE": cfg.AuthLimitServiceCode,
+		"AUTH_LIMIT_SERVICE_NAME": cfg.AuthLimitServiceName,
+		"AUTH_LIMIT_SERVICE_ID":   registered.ServiceID,
+		"AUTH_LIMIT_APP_NAME":     cfg.AuthLimitAppName,
+		"AUTH_LIMIT_APP_ID":       registered.AppID,
+		"AUTH_LIMIT_APP_SECRET":   registered.AppSecret,
 	}); err != nil {
 		return err
 	}
