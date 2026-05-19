@@ -97,10 +97,10 @@ func ensureRole(ctx context.Context, conn *sql.DB, username, password string) er
 		return err
 	}
 	if exists {
-		_, err := conn.ExecContext(ctx, "ALTER ROLE "+quoteIdent(username)+" WITH LOGIN PASSWORD $1", password)
+		_, err := conn.ExecContext(ctx, "ALTER ROLE "+quoteIdent(username)+" WITH LOGIN PASSWORD "+quoteLiteral(password))
 		return err
 	}
-	_, err := conn.ExecContext(ctx, "CREATE ROLE "+quoteIdent(username)+" WITH LOGIN PASSWORD $1", password)
+	_, err := conn.ExecContext(ctx, "CREATE ROLE "+quoteIdent(username)+" WITH LOGIN PASSWORD "+quoteLiteral(password))
 	return err
 }
 
@@ -146,6 +146,10 @@ func postgresURL(host, port, database, username, password string) string {
 
 func quoteIdent(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func quoteLiteral(value string) string {
+	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
 }
 
 func randomPassword() (string, error) {
