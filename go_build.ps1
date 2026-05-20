@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dist = Join-Path $root $OutputDir
+$goCache = Join-Path $root ".gocache"
 $packageDir = Join-Path $dist "$AppName-linux-amd64"
 $binary = Join-Path $packageDir $AppName
 
@@ -23,9 +24,14 @@ function Write-Utf8NoBom {
 }
 
 New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+New-Item -ItemType Directory -Force -Path $goCache | Out-Null
+
+$previousGoCache = $env:GOCACHE
 
 Push-Location $root
 try {
+    $env:GOCACHE = $goCache
+
     go test ./...
 
     $env:CGO_ENABLED = "0"
@@ -67,6 +73,9 @@ try {
         "Startup arguments:",
         "serve --env $DeployDir/.env --migrate",
         "",
+        "If your panel only allows selecting the executable and sends no arguments, this binary will default to:",
+        "serve --env .env --migrate",
+        "",
         "Reverse proxy:",
         "$BaseURL -> http://127.0.0.1:<CONFIG_CENTER_ADDR port>",
         "",
@@ -99,4 +108,10 @@ finally {
     Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue
     Remove-Item Env:GOOS -ErrorAction SilentlyContinue
     Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+    if ($null -ne $previousGoCache) {
+        $env:GOCACHE = $previousGoCache
+    }
+    else {
+        Remove-Item Env:GOCACHE -ErrorAction SilentlyContinue
+    }
 }

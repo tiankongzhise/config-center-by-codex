@@ -28,8 +28,13 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		printHelp()
-		return nil
+		defaultArgs, ok := defaultServeArgs()
+		if !ok {
+			printHelp()
+			return nil
+		}
+		slog.Info("no command provided; defaulting to serve", "env", defaultArgs[2], "migrate", true)
+		args = defaultArgs
 	}
 
 	switch args[0] {
@@ -47,6 +52,14 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func defaultServeArgs() ([]string, bool) {
+	envPath, err := config.ResolveEnvPath(".env")
+	if err != nil {
+		return nil, false
+	}
+	return []string{"serve", "--env", envPath, "--migrate"}, true
 }
 
 func registerService(args []string) error {
@@ -243,5 +256,8 @@ Examples:
   config-center serve --env .env
   config-center init-db --env .env
   config-center migrate --env .env
+
+If a readable .env file is next to the binary or in the working directory,
+running config-center with no arguments defaults to: serve --env .env --migrate
 `)
 }
