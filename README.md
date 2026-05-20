@@ -117,10 +117,10 @@ go run ./cmd/config-center register-service --env .env
 .\go_build.ps1
 ```
 
-如果部署目录、监听端口或运行用户不同，可以显式指定：
+如果部署目录或运行用户不同，可以显式指定；监听端口不在构建脚本中指定，统一读取部署机 `.env` 的 `CONFIG_CENTER_ADDR`：
 
 ```powershell
-.\go_build.ps1 -DeployDir "/www/wwwroot/config-service.baichengedu.com" -ListenAddr ":9313" -ServiceUser "www"
+.\go_build.ps1 -DeployDir "/www/wwwroot/config-service.baichengedu.com" -ServiceUser "www"
 ```
 
 构建产物位于：
@@ -156,21 +156,21 @@ chmod +x ./config-center
 
 ```text
 执行文件：/www/wwwroot/config-service.baichengedu.com/config-center
-启动参数：serve --env /www/wwwroot/config-service.baichengedu.com/.env --addr :9313 --migrate
+启动参数：serve --env /www/wwwroot/config-service.baichengedu.com/.env --migrate
 ```
 
-宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到本机 `127.0.0.1:9313`。
+宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到 `.env` 中 `CONFIG_CENTER_ADDR` 对应的本机端口，例如 `CONFIG_CENTER_ADDR=:9313` 时转发到 `127.0.0.1:9313`。
 
 ## 本地开发启动
 
 ```bash
-go run ./cmd/config-center serve --env .env --addr :9313
+go run ./cmd/config-center serve --env .env
 ```
 
 也可以启动前自动迁移：
 
 ```bash
-go run ./cmd/config-center serve --env .env --addr :9313 --migrate
+go run ./cmd/config-center serve --env .env --migrate
 ```
 
 浏览器访问：
@@ -237,7 +237,7 @@ go test ./...
 go run ./cmd/config-center init-db --env .env
 go run ./cmd/config-center migrate --env .env
 go run ./cmd/config-center register-service --env .env
-go run ./cmd/config-center serve --env .env --addr :9313 --migrate
+go run ./cmd/config-center serve --env .env --migrate
 ```
 
 ## 文档

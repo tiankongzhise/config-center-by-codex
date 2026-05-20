@@ -2,7 +2,6 @@ param(
     [string]$OutputDir = "dist",
     [string]$AppName = "config-center",
     [string]$DeployDir = "/www/wwwroot/config-service.baichengedu.com",
-    [string]$ListenAddr = ":9313",
     [string]$ServiceUser = "www",
     [string]$BaseURL = "https://config-service.baichengedu.com"
 )
@@ -45,7 +44,7 @@ try {
         "[Service]",
         "Type=simple",
         "WorkingDirectory=$DeployDir",
-        "ExecStart=$DeployDir/$AppName serve --env $DeployDir/.env --addr $ListenAddr --migrate",
+        "ExecStart=$DeployDir/$AppName serve --env $DeployDir/.env --migrate",
         "Restart=always",
         "RestartSec=5",
         "User=$ServiceUser",
@@ -66,10 +65,10 @@ try {
         "$DeployDir/$AppName",
         "",
         "Startup arguments:",
-        "serve --env $DeployDir/.env --addr $ListenAddr --migrate",
+        "serve --env $DeployDir/.env --migrate",
         "",
         "Reverse proxy:",
-        "$BaseURL -> http://127.0.0.1$ListenAddr",
+        "$BaseURL -> http://127.0.0.1:<CONFIG_CENTER_ADDR port>",
         "",
         "Notes:",
         "Run init-db, migrate and register-service once over SSH. Let Baota Panel start, stop and restart the long-running service."
@@ -85,7 +84,7 @@ try {
         "sha256=$shaHash",
         "base_url=$BaseURL",
         "deploy_dir=$DeployDir",
-        "listen_addr=$ListenAddr",
+        "listen_addr=read from CONFIG_CENTER_ADDR in .env",
         "service_user=$ServiceUser"
     )
     Write-Utf8NoBom -Path (Join-Path $packageDir "BUILD_INFO.txt") -Lines $manifestLines

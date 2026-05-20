@@ -175,6 +175,9 @@ func serve(args []string) error {
 	if *addr != "" {
 		cfg.Addr = *addr
 	}
+	if cfg.Addr == "" {
+		return errors.New("CONFIG_CENTER_ADDR is required in .env for serve; use --addr only for local temporary overrides")
+	}
 
 	appStore, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -220,7 +223,7 @@ func printHelp() {
   register-service  register this service in auth-limit
 
 Examples:
-  config-center serve --env .env --addr :8080
+  config-center serve --env .env
   config-center init-db --env .env
   config-center migrate --env .env
 `)

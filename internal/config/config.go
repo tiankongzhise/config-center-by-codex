@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	defaultAddr             = ":8080"
-	defaultBaseURL          = "http://localhost:8080"
+	defaultBaseURL          = "http://localhost"
 	defaultAuthLimitBaseURL = "https://auth-limit.baichengedu.com"
 
 	defaultAuthLimitOperatorUsername = "cfgcenter_ops"
@@ -77,7 +76,7 @@ func Load(path string) (Config, error) {
 	cfg := Config{
 		EnvPath: resolvedPath,
 
-		Addr:    get("CONFIG_CENTER_ADDR", defaultAddr),
+		Addr:    get("CONFIG_CENTER_ADDR", ""),
 		BaseURL: strings.TrimRight(get("CONFIG_CENTER_BASE_URL", defaultBaseURL), "/"),
 
 		DatabaseURL: get("CONFIG_CENTER_DATABASE_URL", ""),

@@ -21,6 +21,20 @@ func TestLoadReadsConfigCenterBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadDoesNotDefaultListenAddr(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Addr != "" {
+		t.Fatalf("expected addr to come from CONFIG_CENTER_ADDR, got %q", cfg.Addr)
+	}
+}
+
 func TestValidatePublicServiceURLRejectsLocalhost(t *testing.T) {
 	cfg := Config{BaseURL: "http://127.0.0.1:18080"}
 	if err := cfg.ValidatePublicServiceURL(); err == nil {
