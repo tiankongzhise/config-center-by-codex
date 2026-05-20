@@ -20,6 +20,17 @@ type Session struct {
 	RevokedAt *time.Time
 }
 
+type APIToken struct {
+	ID                    string
+	UserID                string
+	AccessTokenHash       string
+	RefreshTokenHash      string
+	AccessTokenExpiresAt  time.Time
+	RefreshTokenExpiresAt time.Time
+	CreatedAt             time.Time
+	RevokedAt             *time.Time
+}
+
 type Project struct {
 	ID           string    `json:"id"`
 	OwnerID      string    `json:"ownerId"`

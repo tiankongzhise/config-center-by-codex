@@ -2,14 +2,13 @@
 
 ## 职责边界
 
-auth-limit 是统一鉴权、限流和服务治理系统，但不保存配置中心本地用户。配置中心的注册、登录、密码哈希和会话都在配置中心数据库中完成。
+auth-limit 是统一限流和服务治理系统，但不保存配置中心本地用户，也不直接面向配置读取方。配置中心的注册、登录、密码哈希、会话和 API Token 都在配置中心数据库中完成。
 
 auth-limit 仅用于：
 
 - 配置中心服务注册。
-- 外部读取配置时校验调用身份。
 - 外部读取配置时执行限流。
-- 可选 M2M 调用方接入。
+- 服务治理联调。
 
 ## 服务注册
 
@@ -33,25 +32,25 @@ auth-limit 仅用于：
 
 ## 外部读取鉴权
 
-对外读取接口接受两类凭据：
+对外读取接口只接受配置中心签发的凭据：
 
-- `Authorization: Bearer <token>`：转发给 auth-limit `/api/auth/verify` 校验。
-- `appId/timestamp/sign`：转发给 auth-limit `/api/auth/m2m` 校验。
+- `Authorization: Bearer <ACCESS_TOKEN>`：配置中心校验本地 `api_tokens` 表中的 token 哈希和有效期。
 
-配置中心不解析或保存调用方身份，只使用 auth-limit 返回结果决定是否允许继续。
+配置中心会用 token 关联到的本地用户做项目归属校验。A 用户的 token 只能读取 A 创建的项目；B 用户生成或刷新 token 不会影响 A 用户的 token。
 
-配置中心本地用户和 auth-limit 用户是分离的。用户在配置中心 UI 注册账号、创建项目后，只获得项目管理权限；这个账号不会自动成为 auth-limit 用户，也不能直接换取 auth-limit `access_token`。
+项目创建者可以在项目详情页点击“生成鉴权 token”，也可以通过配置中心 API 使用账号密码换取 `access_token` 和 `refresh_token`：
 
-项目创建者可以在项目详情页使用“外部读取鉴权”面板获取调用示例：
+```bash
+curl -sS -X POST "https://config-center.example.com/api/auth/tokens" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"<CONFIG_CENTER_USERNAME>","password":"<CONFIG_CENTER_PASSWORD>"}'
+```
 
-- Bearer Token：输入已存在的 auth-limit 用户名和密码，配置中心后端代理调用 auth-limit `/api/auth/login`，只把短期 `access_token` 返回到当前页面。
-- M2M 签名：调用方使用自己的 auth-limit APP 凭据生成 `appId/timestamp/sign`，配置中心只负责把这些请求头转发给 auth-limit 校验。
-
-如果调用方还没有 auth-limit 账号或 APP，需要先由 auth-limit 管理员创建并授权。`AUTH_LIMIT_APP_ID` 和 `AUTH_LIMIT_APP_SECRET` 是配置中心服务接入 auth-limit 时的服务侧凭据，不应该作为普通调用方共享密钥。
+刷新使用 `/api/auth/tokens/refresh`。刷新只轮换当前 `refresh_token` 对应的 token 记录；同一用户其它 token 和其它用户 token 不受影响。
 
 ## 限流校验
 
-鉴权通过后，配置中心调用 auth-limit `/oidc/limit/verify`：
+配置中心本地 token 鉴权和项目归属校验通过后，配置中心调用 auth-limit `/oidc/limit/verify`：
 
 ```json
 {
@@ -59,8 +58,7 @@ auth-limit 仅用于：
   "path": "/api/public/projects/<code>/config",
   "method": "GET",
   "ip": "<client-ip>",
-  "userId": "<auth-limit-user-id>",
-  "appId": "<app-id>"
+  "userId": "<config-center-user-id>"
 }
 ```
 

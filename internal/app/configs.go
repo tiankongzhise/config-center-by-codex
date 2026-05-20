@@ -10,6 +10,7 @@ type ConfigStore interface {
 	UpsertProjectConfig(ctx context.Context, cfg ProjectConfig) (ProjectConfig, error)
 	FindProjectConfig(ctx context.Context, projectID, kind string) (ProjectConfig, error)
 	FindProjectConfigByCode(ctx context.Context, code, kind string) (Project, ProjectConfig, error)
+	FindProjectConfigByCodeForOwner(ctx context.Context, ownerID, code, kind string) (Project, ProjectConfig, error)
 }
 
 type ConfigService struct {
@@ -67,6 +68,14 @@ func (s *ConfigService) GetByProjectCode(ctx context.Context, code, kind string)
 		return Project{}, ProjectConfig{}, err
 	}
 	return s.store.FindProjectConfigByCode(ctx, code, kind)
+}
+
+func (s *ConfigService) GetByProjectCodeForOwner(ctx context.Context, owner User, code, kind string) (Project, ProjectConfig, error) {
+	kind, err := normalizeConfigKind(kind)
+	if err != nil {
+		return Project{}, ProjectConfig{}, err
+	}
+	return s.store.FindProjectConfigByCodeForOwner(ctx, owner.ID, code, kind)
 }
 
 func normalizeConfigKind(kind string) (string, error) {

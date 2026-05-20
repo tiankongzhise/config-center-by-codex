@@ -210,6 +210,12 @@ button,
   padding-left: 24px;
 }
 
+.token-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .auth-method h3,
 .examples h3 {
   margin-top: 0;
@@ -264,6 +270,7 @@ button,
   .grid,
   .page-head,
   .section-head,
+  .token-grid,
   .auth-methods {
     display: block;
   }

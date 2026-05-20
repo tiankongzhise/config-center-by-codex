@@ -1,6 +1,6 @@
 # config-center-by-codex
 
-配置中心是一个 Go 单体应用，提供本地用户注册登录、项目隔离、RSA 加密配置存储、Web UI、管理 API 和对外配置读取 API。配置中心用户信息保存在自己的 PostgreSQL 数据库中；auth-limit 只用于外部读取配置时的鉴权、限流和服务治理。
+配置中心是一个 Go 单体应用，提供本地用户注册登录、项目隔离、RSA 加密配置存储、Web UI、管理 API 和对外配置读取 API。配置中心用户信息、API Token 和项目归属都保存在自己的 PostgreSQL 数据库中；auth-limit 作为配置中心服务端协调层依赖，用于限流和服务治理。
 
 ## 功能
 
@@ -9,7 +9,7 @@
 - 每个项目维护独立 RSA 公钥。
 - `config` 和 `env` 写入前使用项目 RSA 公钥加密，数据库不保存明文。
 - 外部读取接口返回密文，由调用方使用自己的私钥解密。
-- 对外读取接口接入 auth-limit Bearer/M2M 鉴权和限流。
+- 对外读取接口使用配置中心签发的 Bearer Token 鉴权，并由配置中心在服务端协调 auth-limit 限流。
 - 提供 PostgreSQL 专用数据库和专用用户初始化命令。
 
 ## 准备配置
@@ -210,7 +210,8 @@ http://localhost:9313
 3. 新建项目，填写项目名称、编码和 RSA 公钥。
 4. 在项目详情页保存 `config` 和 `env` 明文。
 5. 服务端立即加密保存，只在数据库中保留密文和内容哈希。
-6. 外部调用方通过 auth-limit 鉴权后读取密文配置。
+6. 在项目详情页点击“生成鉴权 token”，或通过 API 使用配置中心账号密码换取 `access_token` 和 `refresh_token`。
+7. 调用方使用配置中心签发的 `access_token` 读取密文配置。配置中心会在服务端完成 auth-limit 限流联调，不要求调用方申请 auth-limit 账号。
 
 ### 项目编码怎么填
 
@@ -230,26 +231,48 @@ http://localhost:9313
 - 长度为 3-63 位。
 - 不要填写中文、空格、下划线、域名、URL 或随机密码。
 
-注意：配置中心本地账号只用于管理项目，不会自动同步到 auth-limit，也不能直接换取 auth-limit `access_token`。读取对外接口时需要使用 auth-limit 账号登录后得到的 Bearer Token，或使用调用方自己的 M2M APP 签名。
-
 ## 对外读取接口
 
-### 获取 Bearer Token
+### 获取配置中心 Bearer Token
 
-在项目详情页的“外部读取鉴权”区域，可以输入 auth-limit 用户名和密码，点击“获取 access_token”，页面会生成可直接使用的 curl 示例。
+登录配置中心后，打开项目详情页，在“配置读取 Token”区域点击“生成鉴权 token”，页面会显示 `access_token` 和 `refresh_token`，并生成可直接使用的 curl 示例。
 
-也可以直接调用 auth-limit：
+也可以直接调用配置中心 API，用配置中心账号密码换取 token：
 
 ```bash
-curl -sS -X POST "https://auth-limit.baichengedu.com/api/auth/login" \
+curl -sS -X POST "https://config-center.example.com/api/auth/tokens" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "<AUTH_LIMIT_USERNAME>",
-    "password": "<AUTH_LIMIT_PASSWORD>"
+    "username": "<CONFIG_CENTER_USERNAME>",
+    "password": "<CONFIG_CENTER_PASSWORD>"
   }'
 ```
 
-使用响应里的 `data.accessToken` 调用配置中心。
+响应会返回：
+
+```json
+{
+  "tokenType": "Bearer",
+  "accessToken": "<ACCESS_TOKEN>",
+  "accessTokenExpiresAt": "2026-05-20T08:30:00Z",
+  "refreshToken": "<REFRESH_TOKEN>",
+  "refreshTokenExpiresAt": "2026-05-27T08:00:00Z"
+}
+```
+
+`access_token` 只代表对应配置中心用户。用户只能读取自己创建项目的配置，不会因为其他用户生成或刷新 token 而失效。
+
+刷新 token：
+
+```bash
+curl -sS -X POST "https://config-center.example.com/api/auth/tokens/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "<REFRESH_TOKEN>"
+  }'
+```
+
+刷新成功后会返回新的 `access_token` 和 `refresh_token`。旧的 `refresh_token` 会失效，但只影响它对应的那一条 token 记录，不会影响同一用户其它 token，也不会影响其它用户。
 
 ### 读取配置
 
@@ -267,17 +290,7 @@ curl -sS "https://config-center.example.com/api/public/projects/<PROJECT_CODE>/e
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
-M2M 调用方也可以按 `docs/api-usage-guide.md` 中的签名规则传递：
-
-```http
-appId: <APP_ID>
-timestamp: <UNIX_SECONDS>
-sign: <SIGN>
-```
-
-M2M 的 `APP_ID` 和 `APP_SECRET` 应该是调用方自己在 auth-limit 中创建的 APP 凭据，不建议复用配置中心服务注册时写入 `.env` 的 `AUTH_LIMIT_APP_ID` 和 `AUTH_LIMIT_APP_SECRET`。
-
-鉴权和限流都通过后，响应示例：
+鉴权和服务端限流都通过后，响应示例：
 
 ```json
 {
@@ -310,7 +323,7 @@ go run ./cmd/config-center serve --env .env --migrate
 - `docs/architecture.md`：架构和安全边界。
 - `docs/database.md`：数据库和迁移设计。
 - `docs/auth-limit-integration.md`：auth-limit 接入说明。
-- `docs/external-auth-guide.md`：项目创建后如何获取 auth-limit 授权并读取配置。
+- `docs/external-auth-guide.md`：项目创建后如何获取配置中心 token 并读取配置。
 - `docs/development.md`：开发和提交流程。
 - `docs/api-usage-guide.md`：auth-limit API 使用说明。
 

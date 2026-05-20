@@ -105,12 +105,71 @@ func (s *Store) FindUserBySessionToken(ctx context.Context, tokenHash string, no
 	return user, session, nil
 }
 
+func (s *Store) FindUserByAPIAccessToken(ctx context.Context, tokenHash string, now time.Time) (app.User, app.APIToken, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			u.id, u.username, u.password_hash, u.display_name, u.created_at, u.updated_at,
+			t.id, t.user_id, t.access_token_hash, t.refresh_token_hash, t.access_token_expires_at,
+			t.refresh_token_expires_at, t.created_at, t.revoked_at
+		FROM api_tokens t
+		JOIN users u ON u.id = t.user_id
+		WHERE t.access_token_hash = $1
+			AND t.revoked_at IS NULL
+			AND t.access_token_expires_at > $2
+	`, tokenHash, now)
+	return scanUserAndAPIToken(row)
+}
+
+func (s *Store) FindUserByAPIRefreshToken(ctx context.Context, tokenHash string, now time.Time) (app.User, app.APIToken, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			u.id, u.username, u.password_hash, u.display_name, u.created_at, u.updated_at,
+			t.id, t.user_id, t.access_token_hash, t.refresh_token_hash, t.access_token_expires_at,
+			t.refresh_token_expires_at, t.created_at, t.revoked_at
+		FROM api_tokens t
+		JOIN users u ON u.id = t.user_id
+		WHERE t.refresh_token_hash = $1
+			AND t.revoked_at IS NULL
+			AND t.refresh_token_expires_at > $2
+	`, tokenHash, now)
+	return scanUserAndAPIToken(row)
+}
+
 func (s *Store) RevokeSession(ctx context.Context, tokenHash string) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE sessions SET revoked_at = now()
 		WHERE token_hash = $1 AND revoked_at IS NULL
 	`, tokenHash)
 	return err
+}
+
+func (s *Store) CreateAPIToken(ctx context.Context, token app.APIToken) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO api_tokens (
+			id, user_id, access_token_hash, refresh_token_hash,
+			access_token_expires_at, refresh_token_expires_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, token.ID, token.UserID, token.AccessTokenHash, token.RefreshTokenHash, token.AccessTokenExpiresAt, token.RefreshTokenExpiresAt)
+	return err
+}
+
+func (s *Store) RevokeAPIToken(ctx context.Context, tokenID string) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET revoked_at = now()
+		WHERE id = $1 AND revoked_at IS NULL
+	`, tokenID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) CreateProject(ctx context.Context, project app.Project) (app.Project, error) {
@@ -248,6 +307,30 @@ func (s *Store) FindProjectConfigByCode(ctx context.Context, code, kind string) 
 	return project, cfg, nil
 }
 
+func (s *Store) FindProjectConfigByCodeForOwner(ctx context.Context, ownerID, code, kind string) (app.Project, app.ProjectConfig, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			p.id, p.owner_id, p.name, p.code, p.description, p.rsa_public_key, p.created_at, p.updated_at,
+			c.project_id, c.kind, c.ciphertext, c.content_hash, c.updated_at
+		FROM projects p
+		JOIN project_configs c ON c.project_id = p.id
+		WHERE p.owner_id = $1 AND p.code = $2 AND c.kind = $3
+	`, ownerID, code, kind)
+
+	var project app.Project
+	var cfg app.ProjectConfig
+	if err := row.Scan(
+		&project.ID, &project.OwnerID, &project.Name, &project.Code, &project.Description, &project.RSAPublicKey, &project.CreatedAt, &project.UpdatedAt,
+		&cfg.ProjectID, &cfg.Kind, &cfg.Ciphertext, &cfg.ContentHash, &cfg.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return app.Project{}, app.ProjectConfig{}, ErrNotFound
+		}
+		return app.Project{}, app.ProjectConfig{}, err
+	}
+	return project, cfg, nil
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -298,6 +381,22 @@ func scanProjectConfig(row scanner) (app.ProjectConfig, error) {
 		return app.ProjectConfig{}, err
 	}
 	return cfg, nil
+}
+
+func scanUserAndAPIToken(row scanner) (app.User, app.APIToken, error) {
+	var user app.User
+	var token app.APIToken
+	if err := row.Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.DisplayName, &user.CreatedAt, &user.UpdatedAt,
+		&token.ID, &token.UserID, &token.AccessTokenHash, &token.RefreshTokenHash,
+		&token.AccessTokenExpiresAt, &token.RefreshTokenExpiresAt, &token.CreatedAt, &token.RevokedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return app.User{}, app.APIToken{}, ErrNotFound
+		}
+		return app.User{}, app.APIToken{}, err
+	}
+	return user, token, nil
 }
 
 func isUniqueViolation(err error) bool {

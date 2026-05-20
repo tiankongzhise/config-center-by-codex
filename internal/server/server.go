@@ -52,7 +52,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/auth/me", s.me)
-	mux.HandleFunc("POST /api/auth-limit/login", s.loginAuthLimit)
+	mux.HandleFunc("POST /api/auth/tokens", s.issueAPIToken)
+	mux.HandleFunc("POST /api/auth/tokens/current", s.issueAPITokenForCurrentUser)
+	mux.HandleFunc("POST /api/auth/tokens/refresh", s.refreshAPIToken)
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("GET /api/projects/{id}", s.getProject)
@@ -133,14 +135,13 @@ func (s *Server) projectPage(w http.ResponseWriter, r *http.Request) {
 	configValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "config")
 	envValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "env")
 	s.render(w, "project_detail.html", map[string]any{
-		"Title":            project.Name,
-		"User":             user,
-		"Project":          project,
-		"Config":           configValue,
-		"Env":              envValue,
-		"PublicURL":        strings.TrimRight(s.cfg.BaseURL, "/") + "/api/public/projects/" + project.Code,
-		"AuthLimitBaseURL": strings.TrimRight(s.cfg.AuthLimitBaseURL, "/"),
-		"AuthLimitReady":   s.cfg.AuthLimitServiceID != "",
+		"Title":          project.Name,
+		"User":           user,
+		"Project":        project,
+		"Config":         configValue,
+		"Env":            envValue,
+		"PublicURL":      strings.TrimRight(s.cfg.BaseURL, "/") + "/api/public/projects/" + project.Code,
+		"AuthLimitReady": s.cfg.AuthLimitServiceID != "",
 	})
 }
 
@@ -209,10 +210,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
-func (s *Server) loginAuthLimit(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireUser(w, r); !ok {
-		return
-	}
+func (s *Server) issueAPIToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -220,24 +218,41 @@ func (s *Server) loginAuthLimit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	input.Username = strings.TrimSpace(input.Username)
-	if input.Username == "" || input.Password == "" {
-		writeError(w, http.StatusBadRequest, "auth-limit username and password are required")
-		return
-	}
 
-	result, err := s.gateway.Login(r.Context(), input.Username, input.Password)
+	result, err := s.auth.IssueAPITokenForCredentials(r.Context(), input.Username, input.Password)
 	if err != nil {
-		status, message := authLimitLoginError(err)
-		writeError(w, status, message)
+		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"tokenType":            result.TokenType,
-		"accessToken":          result.AccessToken,
-		"accessTokenExpiresAt": result.AccessTokenExpiresAt,
-		"authLimitBaseURL":     strings.TrimRight(s.cfg.AuthLimitBaseURL, "/"),
-	})
+	writeJSON(w, http.StatusOK, apiTokenPayload(result))
+}
+
+func (s *Server) issueAPITokenForCurrentUser(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.auth.IssueAPITokenForUser(r.Context(), user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "issue token failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, apiTokenPayload(result))
+}
+
+func (s *Server) refreshAPIToken(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.auth.RefreshAPIToken(r.Context(), strings.TrimSpace(input.RefreshToken))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid refresh token")
+		return
+	}
+	writeJSON(w, http.StatusOK, apiTokenPayload(result))
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
@@ -372,16 +387,16 @@ func (s *Server) getPublicProjectEnv(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPublicConfig(w http.ResponseWriter, r *http.Request, kind string) {
-	authResult, ok := s.verifyExternalCaller(w, r)
+	user, ok := s.verifyExternalCaller(w, r)
 	if !ok {
 		return
 	}
-	limitResult, ok := s.verifyExternalLimit(w, r, authResult)
+	limitResult, ok := s.verifyExternalLimit(w, r, user)
 	if !ok {
 		return
 	}
 
-	project, cfg, err := s.configs.GetByProjectCode(r.Context(), r.PathValue("code"), kind)
+	project, cfg, err := s.configs.GetByProjectCodeForOwner(r.Context(), user, r.PathValue("code"), kind)
 	if err != nil {
 		writeStoreOrValidationError(w, err, "")
 		return
@@ -401,32 +416,21 @@ func (s *Server) getPublicConfig(w http.ResponseWriter, r *http.Request, kind st
 	})
 }
 
-func (s *Server) verifyExternalCaller(w http.ResponseWriter, r *http.Request) (authlimit.AuthResult, bool) {
+func (s *Server) verifyExternalCaller(w http.ResponseWriter, r *http.Request) (app.User, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		result, err := s.gateway.VerifyBearer(r.Context(), strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")))
+		user, _, err := s.auth.CurrentAPIUser(r.Context(), strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")))
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "auth-limit bearer verification failed")
-			return authlimit.AuthResult{}, false
+			writeError(w, http.StatusUnauthorized, "invalid access token")
+			return app.User{}, false
 		}
-		return result, true
+		return user, true
 	}
-	if r.Header.Get("appId") != "" && r.Header.Get("timestamp") != "" && r.Header.Get("sign") != "" {
-		result, err := s.gateway.VerifyM2M(r.Context(), r.Header, r.URL.Path, map[string]any{
-			"projectCode": r.PathValue("code"),
-			"kind":        pathKind(r.URL.Path),
-		})
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "auth-limit m2m verification failed")
-			return authlimit.AuthResult{}, false
-		}
-		return result, true
-	}
-	writeError(w, http.StatusUnauthorized, "external caller credential is required")
-	return authlimit.AuthResult{}, false
+	writeError(w, http.StatusUnauthorized, "Authorization: Bearer <ACCESS_TOKEN> is required")
+	return app.User{}, false
 }
 
-func (s *Server) verifyExternalLimit(w http.ResponseWriter, r *http.Request, caller authlimit.AuthResult) (authlimit.LimitResult, bool) {
+func (s *Server) verifyExternalLimit(w http.ResponseWriter, r *http.Request, caller app.User) (authlimit.LimitResult, bool) {
 	if s.cfg.AuthLimitServiceID == "" {
 		writeError(w, http.StatusServiceUnavailable, "AUTH_LIMIT_SERVICE_ID is not configured")
 		return authlimit.LimitResult{}, false
@@ -436,8 +440,7 @@ func (s *Server) verifyExternalLimit(w http.ResponseWriter, r *http.Request, cal
 		Path:      r.URL.Path,
 		Method:    r.Method,
 		IP:        clientIP(r),
-		UserID:    caller.UserID,
-		AppID:     caller.AppID,
+		UserID:    caller.ID,
 	})
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "auth-limit limit verification failed")
@@ -455,6 +458,21 @@ func (s *Server) verifyExternalLimit(w http.ResponseWriter, r *http.Request, cal
 		return authlimit.LimitResult{}, false
 	}
 	return result, true
+}
+
+func apiTokenPayload(result app.APITokenResult) map[string]any {
+	return map[string]any{
+		"tokenType":             result.TokenType,
+		"accessToken":           result.AccessToken,
+		"accessTokenExpiresAt":  result.AccessTokenExpiresAt,
+		"refreshToken":          result.RefreshToken,
+		"refreshTokenExpiresAt": result.RefreshTokenExpiresAt,
+		"user": map[string]any{
+			"id":          result.User.ID,
+			"username":    result.User.Username,
+			"displayName": result.User.DisplayName,
+		},
+	}
 }
 
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (app.User, bool) {
@@ -544,18 +562,6 @@ func writeStoreOrValidationError(w http.ResponseWriter, err error, conflictMessa
 		writeError(w, http.StatusNotFound, "resource not found")
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
-	}
-}
-
-func authLimitLoginError(err error) (int, string) {
-	message := err.Error()
-	switch {
-	case strings.Contains(message, "status=401"):
-		return http.StatusUnauthorized, "auth-limit 用户名或密码不正确"
-	case strings.Contains(message, "status=423"):
-		return http.StatusLocked, "auth-limit 账号已被临时锁定"
-	default:
-		return http.StatusBadGateway, "auth-limit 登录失败，请检查服务地址或稍后重试"
 	}
 }
 

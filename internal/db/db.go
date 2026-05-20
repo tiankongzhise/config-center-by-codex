@@ -203,6 +203,19 @@ var migrationStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)`,
+	`CREATE TABLE IF NOT EXISTS api_tokens (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		access_token_hash TEXT NOT NULL UNIQUE,
+		refresh_token_hash TEXT NOT NULL UNIQUE,
+		access_token_expires_at TIMESTAMPTZ NOT NULL,
+		refresh_token_expires_at TIMESTAMPTZ NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		revoked_at TIMESTAMPTZ
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_api_tokens_access_token_hash ON api_tokens(access_token_hash)`,
+	`CREATE INDEX IF NOT EXISTS idx_api_tokens_refresh_token_hash ON api_tokens(refresh_token_hash)`,
 	`CREATE TABLE IF NOT EXISTS projects (
 		id TEXT PRIMARY KEY,
 		owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

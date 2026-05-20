@@ -54,6 +54,23 @@
 | `created_at` | 创建时间 |
 | `revoked_at` | 登出或吊销时间 |
 
+### api_tokens
+
+保存配置读取 API 的 access token 和 refresh token 哈希。
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | UUID 主键 |
+| `user_id` | token 所属配置中心用户 ID |
+| `access_token_hash` | `access_token` 哈希，唯一 |
+| `refresh_token_hash` | `refresh_token` 哈希，唯一 |
+| `access_token_expires_at` | access token 过期时间 |
+| `refresh_token_expires_at` | refresh token 过期时间 |
+| `created_at` | 创建时间 |
+| `revoked_at` | 刷新、吊销或失效时间 |
+
+刷新 token 时只吊销当前 `refresh_token` 对应的这一行，再为同一用户创建新记录。同一用户其它 token 和其它用户 token 不会被批量吊销。
+
 ### projects
 
 保存用户创建的项目。
