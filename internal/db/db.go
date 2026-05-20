@@ -22,6 +22,17 @@ type DatabaseConfig struct {
 }
 
 func EnsureDatabaseAndUser(ctx context.Context, cfg config.Config) (DatabaseConfig, error) {
+	if cfg.DatabaseURL != "" {
+		if err := Ping(ctx, cfg.DatabaseURL); err == nil {
+			return DatabaseConfig{
+				ConfigDBName:     cfg.ConfigDBName,
+				ConfigDBUser:     cfg.ConfigDBUser,
+				ConfigDBPassword: cfg.ConfigDBPassword,
+			}, nil
+		} else if cfg.PostgresAdmin == "" || cfg.PostgresAdminSecret == "" {
+			return DatabaseConfig{}, fmt.Errorf("dedicated database account is not usable and PG_ADMIN/PG_ADMIN_SECRET are not configured: %w", err)
+		}
+	}
 	if cfg.PostgresAdmin == "" || cfg.PostgresAdminSecret == "" {
 		return DatabaseConfig{}, errors.New("PG_ADMIN and PG_ADMIN_SECRET are required")
 	}
@@ -89,6 +100,18 @@ func Migrate(ctx context.Context, databaseURL string) error {
 		}
 	}
 	return nil
+}
+
+func Ping(ctx context.Context, databaseURL string) error {
+	if databaseURL == "" {
+		return errors.New("CONFIG_CENTER_DATABASE_URL or CONFIG_CENTER_DB_PASSWORD is required")
+	}
+	conn, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return conn.PingContext(ctx)
 }
 
 func ensureRole(ctx context.Context, conn *sql.DB, username, password string) error {

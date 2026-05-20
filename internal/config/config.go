@@ -247,6 +247,40 @@ func UpdateDotEnv(path string, updates map[string]string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }
 
+func ClearDotEnvValues(path string, keys ...string) error {
+	lines, err := readDotEnvLines(path)
+	if err != nil {
+		return err
+	}
+	if len(lines) == 0 || len(keys) == 0 {
+		return nil
+	}
+
+	clearKeys := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		clearKeys[key] = true
+	}
+
+	changed := false
+	for index, line := range lines {
+		key, _, ok := parseEnvLine(line)
+		if !ok || !clearKeys[key] {
+			continue
+		}
+		lines[index] = key + "="
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0o600)
+}
+
 func readDotEnvLines(path string) ([]string, error) {
 	bytes, err := os.ReadFile(path)
 	if err != nil {

@@ -28,23 +28,39 @@ CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com
 
 PG_HOST=127.0.0.1
 PG_PORT=5432
+# 仅首次 init-db 引导使用；专用账号可用后会被自动清空。
 PG_ADMIN=postgres
 PG_ADMIN_SECRET=你的PostgreSQL管理员密码
 
+CONFIG_CENTER_DB_NAME=config_center
+CONFIG_CENTER_DB_USER=config_center
+# 可留空交给 init-db 生成；已有专用账号时填写现有密码。
+CONFIG_CENTER_DB_PASSWORD=
+
 AUTH_LIMIT_BASE_URL=https://auth-limit.baichengedu.com
+# 仅首次 register-service 引导使用；注册完成后会被自动清空。
 AUTH_LIMIT_ADMIN=授权服务管理员账号
 AUTH_LIMIT_ADMIN_SECRET=授权服务管理员密码
 # auth-limit 用户名规则：3-20 位字母、数字或下划线；自动生成的密码会满足 8-20 位复杂度要求。
 AUTH_LIMIT_OPERATOR_USERNAME=cfgcenter_ops
+# 可留空交给首次引导生成；已有 operator 时填写现有密码。
 AUTH_LIMIT_OPERATOR_PASSWORD=
 AUTH_LIMIT_SERVICE_CODE=config-service-baichengedu
 AUTH_LIMIT_SERVICE_NAME=配置中心生产服务
 AUTH_LIMIT_APP_NAME=config-service-baichengedu
+# 三项都存在时 register-service 会直接跳过，避免重复注册。
+AUTH_LIMIT_SERVICE_ID=
+AUTH_LIMIT_APP_ID=
+AUTH_LIMIT_APP_SECRET=
 ```
 
 `CONFIG_CENTER_BASE_URL` 是注册到 auth-limit 的服务地址，必须是 auth-limit 能访问到的真实公网 HTTPS 地址。不要把 `localhost`、`127.0.0.1`、局域网 IP 或普通 HTTP 地址注册到远端 auth-limit。
 
-`AUTH_LIMIT_ADMIN` 只用于一次性引导：创建配置中心专用 auth-limit 用户、创建角色并分配 `app:manage`、`service:manage`、`limit:manage`、`statistics:read` 权限。服务注册和 APP 创建会使用 `AUTH_LIMIT_OPERATOR_USERNAME` 登录后的 Token，不再直接使用 admin Token 执行业务接入操作。
+`PG_ADMIN` 和 `PG_ADMIN_SECRET` 只用于首次 `init-db`：创建配置中心数据库和专用 PostgreSQL 用户。专用账号已经可连接时，`init-db` 会直接返回成功，不再要求管理员账号。
+
+`AUTH_LIMIT_ADMIN` 和 `AUTH_LIMIT_ADMIN_SECRET` 只用于首次 `register-service`：创建配置中心专用 auth-limit operator、创建角色并分配 `app:manage`、`service:manage`、`limit:manage`、`statistics:read` 权限。服务注册和 APP 创建会使用 `AUTH_LIMIT_OPERATOR_USERNAME` 登录后的 Token，不再直接使用 admin Token 执行业务接入操作。
+
+`init-db` 和 `register-service` 成功后会自动清空 `.env` 中的超级账号字段。后续启动只需要保留 `CONFIG_CENTER_DB_*`、`AUTH_LIMIT_OPERATOR_PASSWORD`、`AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID` 和 `AUTH_LIMIT_APP_SECRET` 等专用配置。
 
 `.env` 已被 `.gitignore` 忽略，不要提交生产密钥。
 
@@ -89,6 +105,8 @@ CONFIG_CENTER_DB_USER=config_center
 CONFIG_CENTER_DB_PASSWORD=自动生成或已有密码
 ```
 
+`init-db` 可以重复执行。它会先检查专用数据库账号是否已经可用；可用时不会再次创建账号，也不需要 `PG_ADMIN`。首次创建成功后，命令会把 `.env` 中的 `PG_ADMIN` 和 `PG_ADMIN_SECRET` 清空。
+
 执行数据库迁移：
 
 ```bash
@@ -102,6 +120,8 @@ go run ./cmd/config-center register-service --env .env
 ```
 
 命令会把 `AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID`、`AUTH_LIMIT_APP_SECRET` 写回 `.env`。
+
+`register-service` 可以重复执行。三项接入信息已经存在时会直接跳过，不会重复创建服务或 APP。首次注册成功后，命令会把 `.env` 中的 `AUTH_LIMIT_ADMIN`、`AUTH_LIMIT_ADMIN_SECRET` 以及兼容旧命名的 `AUTH_SERVICE_ADMIN*` 清空。`AUTH_LIMIT_APP_SECRET` 是一次性 secret，如果 APP 已经存在但 `.env` 缺少 secret，需要在 auth-limit 后台重置 secret 后再写回 `.env`。
 
 如果使用绝对路径运行二进制，建议也使用绝对 `.env` 路径：
 
@@ -143,7 +163,7 @@ dist/config-center-linux-amd64/
 /www/wwwroot/config-service.baichengedu.com
 ```
 
-部署后把 `.env.example` 复制为 `.env`，填写 PostgreSQL 管理员密码和 auth-limit 管理员凭据，然后在服务器执行一次性初始化命令：
+部署后把 `.env.example` 复制为 `.env`。首次部署时填写 PostgreSQL 管理员密码和 auth-limit 管理员凭据；如果已经完成过初始化，只需要保留专用 PostgreSQL 账号、auth-limit operator 密码和 service/app 接入信息。然后在服务器执行一次性初始化命令：
 
 ```bash
 chmod +x ./config-center
@@ -151,6 +171,8 @@ chmod +x ./config-center
 ./config-center migrate --env /www/wwwroot/config-service.baichengedu.com/.env
 ./config-center register-service --env /www/wwwroot/config-service.baichengedu.com/.env
 ```
+
+三条初始化命令都是幂等的，可以安全重跑。成功后 `.env` 中的 PostgreSQL 管理员字段和 auth-limit 管理员字段会被清空，后续不要再把超级账号信息放回常驻运行环境。
 
 不要在 SSH 前台手动执行 `serve` 作为生产启动方式。宝塔面板 Go 项目中配置：
 
@@ -160,6 +182,8 @@ chmod +x ./config-center
 ```
 
 宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到 `.env` 中 `CONFIG_CENTER_ADDR` 对应的本机端口，例如 `CONFIG_CENTER_ADDR=:9313` 时转发到 `127.0.0.1:9313`。
+
+生产常驻启动只配置 `serve --env ... --migrate`。不要把 `init-db` 或 `register-service` 放进宝塔/系统服务的启动参数；如果启动日志只打印命令帮助，通常说明启动参数没有以 `serve` 子命令开头。
 
 ## 本地开发启动
 

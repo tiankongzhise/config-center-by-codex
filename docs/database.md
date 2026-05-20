@@ -2,7 +2,7 @@
 
 ## 数据库与账号
 
-配置中心使用独立 PostgreSQL 数据库和专用数据库用户。管理员凭据只用于初始化：
+配置中心使用独立 PostgreSQL 数据库和专用数据库用户。管理员凭据只用于首次初始化：
 
 - 创建配置中心数据库。
 - 创建配置中心专用用户。
@@ -10,14 +10,18 @@
 
 应用启动、迁移和日常访问都使用专用用户。专用用户不应拥有管理其他数据库的权限。
 
+`init-db` 是幂等命令。它会先使用 `CONFIG_CENTER_DB_*` 检查专用账号是否已经可连接；如果可连接，就直接成功返回，不再要求 `PG_ADMIN` 和 `PG_ADMIN_SECRET`。只有专用账号不存在或不可用时，才需要 PostgreSQL 管理员凭据来创建数据库和用户。
+
+首次创建成功后，`init-db` 会把 `.env` 中的 `PG_ADMIN` 和 `PG_ADMIN_SECRET` 清空。生产运行环境不应长期保存 PostgreSQL 超级账号信息。
+
 ## 环境变量
 
 | 变量 | 说明 |
 | --- | --- |
 | `PG_HOST` | PostgreSQL 地址 |
 | `PG_PORT` | PostgreSQL 端口 |
-| `PG_ADMIN` | PostgreSQL 管理员账号，仅初始化使用 |
-| `PG_ADMIN_SECRET` | PostgreSQL 管理员密码，仅初始化使用 |
+| `PG_ADMIN` | PostgreSQL 管理员账号，仅首次引导使用，成功后会被清空 |
+| `PG_ADMIN_SECRET` | PostgreSQL 管理员密码，仅首次引导使用，成功后会被清空 |
 | `CONFIG_CENTER_DB_NAME` | 配置中心数据库名 |
 | `CONFIG_CENTER_DB_USER` | 配置中心专用数据库用户 |
 | `CONFIG_CENTER_DB_PASSWORD` | 配置中心专用数据库密码 |
@@ -80,6 +84,8 @@
 ## 迁移策略
 
 迁移由应用内置 SQL 执行，可重复运行。生产环境先运行 `config-center migrate` 完成一次性迁移，再由宝塔面板托管 `serve --migrate` 作为常驻进程；本地开发可以直接使用 `config-center serve --migrate` 临时启动。
+
+`migrate` 和 `serve --migrate` 都只使用专用数据库账号，不依赖 `PG_ADMIN`。初始化完成后删除或清空管理员账号不会影响启动。
 
 ## 数据保护
 

@@ -71,7 +71,8 @@ try {
         "$BaseURL -> http://127.0.0.1:<CONFIG_CENTER_ADDR port>",
         "",
         "Notes:",
-        "Run init-db, migrate and register-service once over SSH. Let Baota Panel start, stop and restart the long-running service."
+        "Run init-db, migrate and register-service over SSH for first bootstrap or when credentials need repair. They are idempotent and clear bootstrap admin secrets after success.",
+        "Let Baota Panel start, stop and restart only the long-running serve process."
     )
     Write-Utf8NoBom -Path (Join-Path $packageDir "BT_PANEL_RUN.txt") -Lines $btPanelLines
 

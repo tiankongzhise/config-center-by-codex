@@ -60,6 +60,13 @@ type RegisteredService struct {
 	OperatorPassword string
 }
 
+type serviceRecord struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Code    string `json:"code"`
+	BaseURL string `json:"baseUrl"`
+}
+
 var authLimitUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,20}$`)
 
 func New(cfg config.Config) *Client {
@@ -130,6 +137,38 @@ func (c *Client) BootstrapOperator(ctx context.Context, adminToken string, cfg c
 }
 
 func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg config.Config) (RegisteredService, error) {
+	serviceID := strings.TrimSpace(cfg.AuthLimitServiceID)
+	appID := strings.TrimSpace(cfg.AuthLimitAppID)
+	appSecret := strings.TrimSpace(cfg.AuthLimitAppSecret)
+
+	if serviceID == "" {
+		createdServiceID, err := c.ensureService(ctx, operatorToken, cfg)
+		if err != nil {
+			return RegisteredService{}, err
+		}
+		serviceID = createdServiceID
+	}
+
+	switch {
+	case appID == "" && appSecret == "":
+		createdAppID, createdAppSecret, err := c.createApp(ctx, operatorToken, cfg)
+		if err != nil {
+			return RegisteredService{}, err
+		}
+		appID = createdAppID
+		appSecret = createdAppSecret
+	case appID == "" || appSecret == "":
+		return RegisteredService{}, errors.New("AUTH_LIMIT_APP_ID and AUTH_LIMIT_APP_SECRET must be configured together; app secrets cannot be recovered after creation")
+	}
+
+	return RegisteredService{
+		ServiceID: serviceID,
+		AppID:     appID,
+		AppSecret: appSecret,
+	}, nil
+}
+
+func (c *Client) ensureService(ctx context.Context, operatorToken string, cfg config.Config) (string, error) {
 	var servicePayload = map[string]any{
 		"name":                cfg.AuthLimitServiceName,
 		"code":                cfg.AuthLimitServiceCode,
@@ -142,10 +181,24 @@ func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg 
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/api/services", bearer(operatorToken), servicePayload, &serviceResponse); err != nil {
-		return RegisteredService{}, fmt.Errorf("register auth-limit service: %w", err)
+	err := c.doJSON(ctx, http.MethodPost, "/api/services", bearer(operatorToken), servicePayload, &serviceResponse)
+	if err == nil {
+		if serviceResponse.Data.ID == "" {
+			return "", errors.New("auth-limit service register response missing id")
+		}
+		return serviceResponse.Data.ID, nil
 	}
+	if !isConflict(err) {
+		return "", fmt.Errorf("register auth-limit service: %w", err)
+	}
+	serviceID, findErr := c.findServiceID(ctx, operatorToken, cfg)
+	if findErr != nil {
+		return "", fmt.Errorf("register auth-limit service: %w; %v", err, findErr)
+	}
+	return serviceID, nil
+}
 
+func (c *Client) createApp(ctx context.Context, operatorToken string, cfg config.Config) (string, string, error) {
 	var appPayload = map[string]any{"name": cfg.AuthLimitAppName}
 	var appResponse struct {
 		Data struct {
@@ -154,14 +207,40 @@ func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg 
 		} `json:"data"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/api/apps", bearer(operatorToken), appPayload, &appResponse); err != nil {
-		return RegisteredService{}, fmt.Errorf("create auth-limit app: %w", err)
+		if isConflict(err) {
+			return "", "", errors.New("auth-limit app already exists; fill AUTH_LIMIT_APP_ID and AUTH_LIMIT_APP_SECRET, or reset the app secret in auth-limit and update .env")
+		}
+		return "", "", fmt.Errorf("create auth-limit app: %w", err)
 	}
+	if appResponse.Data.AppID == "" || appResponse.Data.AppSecret == "" {
+		return "", "", errors.New("auth-limit app create response missing appId or appSecret")
+	}
+	return appResponse.Data.AppID, appResponse.Data.AppSecret, nil
+}
 
-	return RegisteredService{
-		ServiceID: serviceResponse.Data.ID,
-		AppID:     appResponse.Data.AppID,
-		AppSecret: appResponse.Data.AppSecret,
-	}, nil
+func (c *Client) findServiceID(ctx context.Context, operatorToken string, cfg config.Config) (string, error) {
+	queries := []string{cfg.AuthLimitServiceName, cfg.AuthLimitServiceCode, ""}
+	for _, query := range queries {
+		path := "/api/services"
+		if query != "" {
+			path += "?name=" + url.QueryEscape(query)
+		}
+		var response struct {
+			Data []serviceRecord `json:"data"`
+		}
+		if err := c.doJSON(ctx, http.MethodGet, path, bearer(operatorToken), nil, &response); err != nil {
+			return "", err
+		}
+		for _, service := range response.Data {
+			if service.ID == "" {
+				continue
+			}
+			if service.Code == cfg.AuthLimitServiceCode || service.Name == cfg.AuthLimitServiceName {
+				return service.ID, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("auth-limit service %q already exists but cannot be found", cfg.AuthLimitServiceCode)
 }
 
 func (c *Client) ensureUser(ctx context.Context, cfg config.Config, password string) (string, error) {

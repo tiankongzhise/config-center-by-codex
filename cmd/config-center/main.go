@@ -60,8 +60,12 @@ func registerService(args []string) error {
 	if err != nil {
 		return err
 	}
-	if cfg.AuthLimitAdmin == "" || cfg.AuthLimitAdminSecret == "" {
-		return errors.New("AUTH_LIMIT_ADMIN/AUTH_SERVICE_ADMIN and AUTH_LIMIT_ADMIN_SECRET/AUTH_SERVICE_ADMIN_SECRET are required")
+	if cfg.AuthLimitServiceID != "" && cfg.AuthLimitAppID != "" && cfg.AuthLimitAppSecret != "" {
+		if err := config.ClearDotEnvValues(cfg.EnvPath, "AUTH_LIMIT_ADMIN", "AUTH_LIMIT_ADMIN_SECRET", "AUTH_SERVICE_ADMIN", "AUTH_SERVICE_ADMIN_SECRET"); err != nil {
+			return err
+		}
+		slog.Info("auth-limit service registration already configured", "serviceId", cfg.AuthLimitServiceID, "appId", cfg.AuthLimitAppID)
+		return nil
 	}
 	if err := cfg.ValidatePublicServiceURL(); err != nil {
 		return err
@@ -69,15 +73,22 @@ func registerService(args []string) error {
 
 	client := authlimit.New(cfg)
 	ctx := context.Background()
-	adminToken, err := client.LoginAdmin(ctx, cfg.AuthLimitAdmin, cfg.AuthLimitAdminSecret)
-	if err != nil {
-		return err
+	operatorPassword := cfg.AuthLimitOperatorPassword
+	if operatorPassword == "" {
+		if cfg.AuthLimitAdmin == "" || cfg.AuthLimitAdminSecret == "" {
+			return errors.New("AUTH_LIMIT_OPERATOR_PASSWORD is required when auth-limit operator already exists and AUTH_LIMIT_ADMIN/AUTH_SERVICE_ADMIN credentials are not configured")
+		}
+		adminToken, err := client.LoginAdmin(ctx, cfg.AuthLimitAdmin, cfg.AuthLimitAdminSecret)
+		if err != nil {
+			return err
+		}
+		bootstrap, err := client.BootstrapOperator(ctx, adminToken, cfg)
+		if err != nil {
+			return err
+		}
+		operatorPassword = bootstrap.Password
 	}
-	bootstrap, err := client.BootstrapOperator(ctx, adminToken, cfg)
-	if err != nil {
-		return err
-	}
-	operatorToken, err := client.LoginAdmin(ctx, cfg.AuthLimitOperatorUsername, bootstrap.Password)
+	operatorToken, err := client.LoginAdmin(ctx, cfg.AuthLimitOperatorUsername, operatorPassword)
 	if err != nil {
 		return err
 	}
@@ -88,7 +99,7 @@ func registerService(args []string) error {
 	if err := config.UpdateDotEnv(cfg.EnvPath, map[string]string{
 		"AUTH_LIMIT_BASE_URL":              cfg.AuthLimitBaseURL,
 		"AUTH_LIMIT_OPERATOR_USERNAME":     cfg.AuthLimitOperatorUsername,
-		"AUTH_LIMIT_OPERATOR_PASSWORD":     bootstrap.Password,
+		"AUTH_LIMIT_OPERATOR_PASSWORD":     operatorPassword,
 		"AUTH_LIMIT_OPERATOR_DISPLAY_NAME": cfg.AuthLimitOperatorDisplayName,
 		"AUTH_LIMIT_OPERATOR_ROLE_CODE":    cfg.AuthLimitOperatorRoleCode,
 		"AUTH_LIMIT_OPERATOR_ROLE_NAME":    cfg.AuthLimitOperatorRoleName,
@@ -99,6 +110,9 @@ func registerService(args []string) error {
 		"AUTH_LIMIT_APP_ID":                registered.AppID,
 		"AUTH_LIMIT_APP_SECRET":            registered.AppSecret,
 	}); err != nil {
+		return err
+	}
+	if err := config.ClearDotEnvValues(cfg.EnvPath, "AUTH_LIMIT_ADMIN", "AUTH_LIMIT_ADMIN_SECRET", "AUTH_SERVICE_ADMIN", "AUTH_SERVICE_ADMIN_SECRET"); err != nil {
 		return err
 	}
 
@@ -128,6 +142,9 @@ func initDB(args []string) error {
 		"CONFIG_CENTER_DB_USER":     updated.ConfigDBUser,
 		"CONFIG_CENTER_DB_PASSWORD": updated.ConfigDBPassword,
 	}); err != nil {
+		return err
+	}
+	if err := config.ClearDotEnvValues(cfg.EnvPath, "PG_ADMIN", "PG_ADMIN_SECRET"); err != nil {
 		return err
 	}
 

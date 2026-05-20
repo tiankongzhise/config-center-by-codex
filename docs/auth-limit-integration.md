@@ -13,7 +13,7 @@ auth-limit 仅用于：
 
 ## 服务注册
 
-初始化时使用 `.env` 中的 auth-limit 管理员凭据登录，然后调用服务注册接口创建配置中心服务。注册成功后把以下值写回 `.env`：
+首次注册时使用 `.env` 中的 auth-limit 管理员凭据引导一个配置中心专用 operator 用户，给它分配 `app:manage`、`service:manage`、`limit:manage`、`statistics:read` 权限，然后使用 operator 登录后的 Token 创建配置中心服务和 M2M APP。注册成功后把以下值写回 `.env`：
 
 | 变量 | 说明 |
 | --- | --- |
@@ -21,6 +21,15 @@ auth-limit 仅用于：
 | `AUTH_LIMIT_SERVICE_ID` | 配置中心在 auth-limit 中的服务 ID |
 | `AUTH_LIMIT_APP_ID` | M2M APP ID，如注册流程创建 |
 | `AUTH_LIMIT_APP_SECRET` | M2M APP Secret，只写入本地 `.env` |
+
+`register-service` 是幂等命令：
+
+- `AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID`、`AUTH_LIMIT_APP_SECRET` 三项都存在时，命令直接跳过，不重复创建服务或 APP。
+- 三项不完整时，命令会优先使用 `AUTH_LIMIT_OPERATOR_USERNAME` 和 `AUTH_LIMIT_OPERATOR_PASSWORD` 登录后补齐注册。
+- `AUTH_LIMIT_OPERATOR_PASSWORD` 为空时，才需要 `AUTH_LIMIT_ADMIN` 和 `AUTH_LIMIT_ADMIN_SECRET` 执行首次 operator 引导。
+- 注册完成或检测到已注册后，命令会清空 `.env` 中的 `AUTH_LIMIT_ADMIN`、`AUTH_LIMIT_ADMIN_SECRET` 以及兼容旧命名的 `AUTH_SERVICE_ADMIN*`。
+
+`AUTH_LIMIT_APP_SECRET` 是创建 APP 或重置 secret 时返回的一次性密钥，无法从 auth-limit 查询恢复。如果 APP 已经存在但 `.env` 缺少 secret，需要在 auth-limit 中重置 APP secret 后写回 `.env`。
 
 ## 外部读取鉴权
 
