@@ -1,6 +1,10 @@
 param(
     [string]$OutputDir = "dist",
-    [string]$AppName = "config-center"
+    [string]$AppName = "config-center",
+    [string]$DeployDir = "/www/wwwroot/config-service.baichengedu.com",
+    [string]$ListenAddr = ":8080",
+    [string]$ServiceUser = "www",
+    [string]$BaseURL = "https://config-service.baichengedu.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,11 +35,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/www/wwwroot/config-center
-ExecStart=/www/wwwroot/config-center/$AppName serve --env /www/wwwroot/config-center/.env --addr :8080 --migrate
+WorkingDirectory=$DeployDir
+ExecStart=$DeployDir/$AppName serve --env $DeployDir/.env --addr $ListenAddr --migrate
 Restart=always
 RestartSec=5
-User=www
+User=$ServiceUser
 Environment=GIN_MODE=release
 
 [Install]
@@ -50,7 +54,10 @@ target=linux/amd64
 cgo=0
 binary=$AppName
 sha256=$($sha.Hash)
-base_url=https://config-service.baichengedu.com
+base_url=$BaseURL
+deploy_dir=$DeployDir
+listen_addr=$ListenAddr
+service_user=$ServiceUser
 "@
     Set-Content -Path (Join-Path $packageDir "BUILD_INFO.txt") -Value $manifest -Encoding UTF8
 
