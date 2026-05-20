@@ -102,6 +102,12 @@ go run ./cmd/config-center register-service --env .env
 
 命令会把 `AUTH_LIMIT_SERVICE_ID`、`AUTH_LIMIT_APP_ID`、`AUTH_LIMIT_APP_SECRET` 写回 `.env`。
 
+如果使用绝对路径运行二进制，建议也使用绝对 `.env` 路径：
+
+```bash
+/www/wwwroot/config-service.baichengedu.com/config-center init-db --env /www/wwwroot/config-service.baichengedu.com/.env
+```
+
 ## 宝塔面板部署构建
 
 在 Windows 开发机执行：

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -51,7 +52,11 @@ type Config struct {
 }
 
 func Load(path string) (Config, error) {
-	values, err := readDotEnv(path)
+	resolvedPath, err := ResolveEnvPath(path)
+	if err != nil {
+		return Config{}, err
+	}
+	values, err := readDotEnv(resolvedPath)
 	if err != nil {
 		return Config{}, err
 	}
@@ -67,7 +72,7 @@ func Load(path string) (Config, error) {
 	}
 
 	cfg := Config{
-		EnvPath: path,
+		EnvPath: resolvedPath,
 
 		Addr:    get("CONFIG_CENTER_ADDR", defaultAddr),
 		BaseURL: strings.TrimRight(get("CONFIG_CENTER_BASE_URL", defaultBaseURL), "/"),
@@ -116,6 +121,33 @@ func Load(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func ResolveEnvPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		path = ".env"
+	}
+	if filepath.IsAbs(path) {
+		if _, err := os.Stat(path); err != nil {
+			return "", fmt.Errorf("env file %q is not readable: %w; pass an absolute path like --env /www/wwwroot/config-service.baichengedu.com/.env", path, err)
+		}
+		return path, nil
+	}
+	if _, err := os.Stat(path); err == nil {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return path, nil
+		}
+		return abs, nil
+	}
+	executable, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(executable), path)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("env file %q was not found; pass an absolute path like --env /www/wwwroot/config-service.baichengedu.com/.env", path)
 }
 
 func (cfg Config) ValidatePublicServiceURL() error {

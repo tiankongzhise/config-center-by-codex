@@ -85,7 +85,7 @@ func registerService(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := config.UpdateDotEnv(*envPath, map[string]string{
+	if err := config.UpdateDotEnv(cfg.EnvPath, map[string]string{
 		"AUTH_LIMIT_BASE_URL":              cfg.AuthLimitBaseURL,
 		"AUTH_LIMIT_OPERATOR_USERNAME":     cfg.AuthLimitOperatorUsername,
 		"AUTH_LIMIT_OPERATOR_PASSWORD":     bootstrap.Password,
@@ -123,7 +123,7 @@ func initDB(args []string) error {
 		return err
 	}
 
-	if err := config.UpdateDotEnv(*envPath, map[string]string{
+	if err := config.UpdateDotEnv(cfg.EnvPath, map[string]string{
 		"CONFIG_CENTER_DB_NAME":     updated.ConfigDBName,
 		"CONFIG_CENTER_DB_USER":     updated.ConfigDBUser,
 		"CONFIG_CENTER_DB_PASSWORD": updated.ConfigDBPassword,

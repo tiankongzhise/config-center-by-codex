@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,29 @@ func TestLoadAuthLimitOperatorDefaults(t *testing.T) {
 	}
 	if cfg.AuthLimitServiceName != "配置中心" {
 		t.Fatalf("unexpected service name %q", cfg.AuthLimitServiceName)
+	}
+}
+
+func TestLoadStoresResolvedEnvPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.EnvPath != path {
+		t.Fatalf("expected env path %q, got %q", path, cfg.EnvPath)
+	}
+}
+
+func TestResolveEnvPathMissingGivesActionableError(t *testing.T) {
+	_, err := ResolveEnvPath(filepath.Join(t.TempDir(), "missing.env"))
+	if err == nil {
+		t.Fatal("expected missing env file error")
+	}
+	if !strings.Contains(err.Error(), "--env /www/wwwroot/config-service.baichengedu.com/.env") {
+		t.Fatalf("expected actionable error, got %v", err)
 	}
 }
