@@ -79,7 +79,7 @@
 
 ## 迁移策略
 
-迁移由应用内置 SQL 执行，可重复运行。启动服务前运行 `config-center migrate`，本地开发也可以使用 `config-center serve --migrate` 自动迁移。
+迁移由应用内置 SQL 执行，可重复运行。生产环境先运行 `config-center migrate` 完成一次性迁移，再由宝塔面板托管 `serve --migrate` 作为常驻进程；本地开发可以直接使用 `config-center serve --migrate` 临时启动。
 
 ## 数据保护
 

@@ -19,6 +19,8 @@ go run ./cmd/config-center register-service
 go run ./cmd/config-center serve --migrate
 ```
 
+`serve` 命令只建议用于本地开发或临时调试。生产环境在宝塔面板中配置 Go 项目常驻进程，不要在 SSH 里以前台方式手动运行 `serve`。
+
 ## 提交流程
 
 - 所有开发在开发分支完成，不直接提交到 `main`。

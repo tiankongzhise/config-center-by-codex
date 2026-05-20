@@ -23,7 +23,7 @@ cp .env.example .env
 填写 `.env`：
 
 ```env
-CONFIG_CENTER_ADDR=:8080
+CONFIG_CENTER_ADDR=:9313
 CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com
 
 PG_HOST=127.0.0.1
@@ -54,14 +54,14 @@ Windows 本地开发时，远端 auth-limit 无法访问你的 `localhost`。要
 
 可选方式：
 
-- Cloudflare Tunnel：`cloudflared tunnel --url http://127.0.0.1:8080`
-- ngrok：`ngrok http 8080`
-- frp：把本机 8080 映射到具备 HTTPS 的公网域名
+- Cloudflare Tunnel：`cloudflared tunnel --url http://127.0.0.1:9313`
+- ngrok：`ngrok http 9313`
+- frp：把本机 9313 映射到具备 HTTPS 的公网域名
 
 拿到类似 `https://xxxx.trycloudflare.com` 或自己的 HTTPS 域名后：
 
 ```env
-CONFIG_CENTER_ADDR=:8080
+CONFIG_CENTER_ADDR=:9313
 CONFIG_CENTER_BASE_URL=https://xxxx.trycloudflare.com
 ```
 
@@ -120,7 +120,7 @@ go run ./cmd/config-center register-service --env .env
 如果部署目录、监听端口或运行用户不同，可以显式指定：
 
 ```powershell
-.\go_build.ps1 -DeployDir "/www/wwwroot/config-service.baichengedu.com" -ListenAddr ":8080" -ServiceUser "www"
+.\go_build.ps1 -DeployDir "/www/wwwroot/config-service.baichengedu.com" -ListenAddr ":9313" -ServiceUser "www"
 ```
 
 构建产物位于：
@@ -134,6 +134,7 @@ dist/config-center-linux-amd64/
 - `config-center`：Linux amd64 静态 Go 二进制，无 CGO 外部依赖。
 - `.env.example`：生产部署环境变量模板，默认使用 `https://config-service.baichengedu.com`。
 - `config-center.service`：systemd 服务示例。
+- `BT_PANEL_RUN.txt`：宝塔面板 Go 项目启动参数示例。
 - `BUILD_INFO.txt`：构建信息和 SHA256。
 
 上传到宝塔建议路径：
@@ -142,34 +143,40 @@ dist/config-center-linux-amd64/
 /www/wwwroot/config-service.baichengedu.com
 ```
 
-部署后把 `.env.example` 复制为 `.env`，填写 PostgreSQL 管理员密码和 auth-limit 管理员凭据，然后在服务器执行：
+部署后把 `.env.example` 复制为 `.env`，填写 PostgreSQL 管理员密码和 auth-limit 管理员凭据，然后在服务器执行一次性初始化命令：
 
 ```bash
 chmod +x ./config-center
 ./config-center init-db --env /www/wwwroot/config-service.baichengedu.com/.env
 ./config-center migrate --env /www/wwwroot/config-service.baichengedu.com/.env
 ./config-center register-service --env /www/wwwroot/config-service.baichengedu.com/.env
-./config-center serve --env /www/wwwroot/config-service.baichengedu.com/.env --addr :8080 --migrate
 ```
 
-宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到本机 `127.0.0.1:8080`。
+不要在 SSH 前台手动执行 `serve` 作为生产启动方式。宝塔面板 Go 项目中配置：
 
-## 启动
+```text
+执行文件：/www/wwwroot/config-service.baichengedu.com/config-center
+启动参数：serve --env /www/wwwroot/config-service.baichengedu.com/.env --addr :9313 --migrate
+```
+
+宝塔反向代理或站点配置需把 `https://config-service.baichengedu.com` 转发到本机 `127.0.0.1:9313`。
+
+## 本地开发启动
 
 ```bash
-go run ./cmd/config-center serve --env .env --addr :8080
+go run ./cmd/config-center serve --env .env --addr :9313
 ```
 
 也可以启动前自动迁移：
 
 ```bash
-go run ./cmd/config-center serve --env .env --addr :8080 --migrate
+go run ./cmd/config-center serve --env .env --addr :9313 --migrate
 ```
 
 浏览器访问：
 
 ```text
-http://localhost:8080
+http://localhost:9313
 ```
 
 ## 使用流程
@@ -230,7 +237,7 @@ go test ./...
 go run ./cmd/config-center init-db --env .env
 go run ./cmd/config-center migrate --env .env
 go run ./cmd/config-center register-service --env .env
-go run ./cmd/config-center serve --env .env --addr :8080 --migrate
+go run ./cmd/config-center serve --env .env --addr :9313 --migrate
 ```
 
 ## 文档
