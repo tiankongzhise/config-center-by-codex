@@ -212,6 +212,24 @@ http://localhost:9313
 5. 服务端立即加密保存，只在数据库中保留密文和内容哈希。
 6. 外部调用方通过 auth-limit 鉴权后读取密文配置。
 
+### 项目编码怎么填
+
+项目编码就是项目的稳定英文标识，会写入 `projects.code`，并用于对外读取接口路径中的 `{code}`：
+
+```text
+/api/public/projects/<PROJECT_CODE>/config
+/api/public/projects/<PROJECT_CODE>/env
+```
+
+建议填写服务或应用的英文短名，例如 `order-service`、`payment-api`、`school-web`。它需要全局唯一，创建后不能修改。
+
+格式规则：
+
+- 只能使用小写字母、数字和连字符 `-`。
+- 必须以小写字母开头。
+- 长度为 3-63 位。
+- 不要填写中文、空格、下划线、域名、URL 或随机密码。
+
 注意：配置中心本地账号只用于管理项目，不会自动同步到 auth-limit，也不能直接换取 auth-limit `access_token`。读取对外接口时需要使用 auth-limit 账号登录后得到的 Bearer Token，或使用调用方自己的 M2M APP 签名。
 
 ## 对外读取接口

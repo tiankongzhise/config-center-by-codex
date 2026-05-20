@@ -110,6 +110,7 @@ a {
 .row span,
 .muted,
 .empty,
+.field-help,
 .row small {
   color: #687385;
 }
@@ -123,6 +124,12 @@ label {
   display: grid;
   font-size: 14px;
   gap: 6px;
+}
+
+.field-help {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: -6px 0 0;
 }
 
 input,

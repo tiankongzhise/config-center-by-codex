@@ -42,6 +42,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "init-db":
 		return initDB(args[1:])
+	case "check-config":
+		return checkConfig(args[1:])
 	case "migrate":
 		return migrateDB(args[1:])
 	case "register-service":
@@ -60,6 +62,22 @@ func defaultServeArgs() ([]string, bool) {
 		return nil, false
 	}
 	return []string{"serve", "--env", envPath, "--migrate"}, true
+}
+
+func checkConfig(args []string) error {
+	fs := flag.NewFlagSet("check-config", flag.ContinueOnError)
+	envPath := fs.String("env", ".env", "path to dotenv file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*envPath)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("config loaded", "env", cfg.EnvPath, "addr", cfg.Addr, "database", cfg.DatabaseTarget(), "baseURL", cfg.BaseURL)
+	return nil
 }
 
 func registerService(args []string) error {
@@ -177,7 +195,7 @@ func migrateDB(args []string) error {
 		return err
 	}
 	if err := db.Migrate(context.Background(), cfg.DatabaseURL); err != nil {
-		return err
+		return fmt.Errorf("migrate database %s: %w", cfg.DatabaseTarget(), err)
 	}
 
 	slog.Info("database migrations completed")
@@ -199,7 +217,7 @@ func serve(args []string) error {
 	}
 	if *migrate {
 		if err := db.Migrate(context.Background(), cfg.DatabaseURL); err != nil {
-			return err
+			return fmt.Errorf("migrate database %s: %w", cfg.DatabaseTarget(), err)
 		}
 	}
 	if *addr != "" {
@@ -215,7 +233,7 @@ func serve(args []string) error {
 	}
 	defer appStore.Close()
 	if err := appStore.Ping(context.Background()); err != nil {
-		return err
+		return fmt.Errorf("connect database %s: %w", cfg.DatabaseTarget(), err)
 	}
 
 	app := server.New(cfg, appStore)
@@ -249,12 +267,14 @@ func printHelp() {
 	fmt.Print(`config-center commands:
   serve             start the HTTP server
   init-db           create the dedicated PostgreSQL database and user
+  check-config      print sanitized runtime configuration
   migrate           run database migrations
   register-service  register this service in auth-limit
 
 Examples:
   config-center serve --env .env
   config-center init-db --env .env
+  config-center check-config --env .env
   config-center migrate --env .env
 
 If a readable .env file is next to the binary or in the working directory,

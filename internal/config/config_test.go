@@ -61,3 +61,32 @@ func TestClearDotEnvValuesKeepsKeysButRemovesSecrets(t *testing.T) {
 		t.Fatal("expected unrelated values to be preserved")
 	}
 }
+
+func TestLoadAcceptsSpacesAroundEnvEqualsAndEscapesDatabaseURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	initial := strings.Join([]string{
+		"PG_HOST = pgmq.baichengedu.com",
+		"PG_PORT = 54320",
+		"CONFIG_CENTER_DB_NAME=config_center",
+		"CONFIG_CENTER_DB_USER=config_center",
+		`CONFIG_CENTER_DB_PASSWORD="pass word+percent%slash/at@colon:"`,
+	}, "\n")
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load env: %v", err)
+	}
+
+	if cfg.PostgresHost != "pgmq.baichengedu.com" || cfg.PostgresPort != "54320" {
+		t.Fatalf("expected configured pg target, got %s:%s", cfg.PostgresHost, cfg.PostgresPort)
+	}
+	if target := cfg.DatabaseTarget(); target != "host=pgmq.baichengedu.com port=54320 database=config_center user=config_center" {
+		t.Fatalf("unexpected database target: %s", target)
+	}
+	if !strings.Contains(cfg.DatabaseURL, "pass%20word+percent%25slash%2Fat%40colon%3A") {
+		t.Fatalf("expected database URL password to be escaped, got %q", cfg.DatabaseURL)
+	}
+}

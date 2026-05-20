@@ -34,6 +34,18 @@ func TestDefaultServeArgsDisabledWithoutDotEnv(t *testing.T) {
 	}
 }
 
+func TestRunAcceptsCheckConfigCommand(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("CONFIG_CENTER_ADDR=:9313\nCONFIG_CENTER_DB_PASSWORD=secret\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	if err := run([]string{"check-config", "--env", envPath}); err != nil {
+		t.Fatalf("check config: %v", err)
+	}
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 

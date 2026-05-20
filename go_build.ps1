@@ -27,10 +27,17 @@ New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
 New-Item -ItemType Directory -Force -Path $goCache | Out-Null
 
 $previousGoCache = $env:GOCACHE
+$previousGoFlags = $env:GOFLAGS
 
 Push-Location $root
 try {
     $env:GOCACHE = $goCache
+    if ([string]::IsNullOrWhiteSpace($previousGoFlags)) {
+        $env:GOFLAGS = "-buildvcs=false"
+    }
+    elseif ($previousGoFlags -notmatch "(^|\s)-buildvcs=") {
+        $env:GOFLAGS = "$previousGoFlags -buildvcs=false"
+    }
 
     go test ./...
 
@@ -73,6 +80,9 @@ try {
         "Startup arguments:",
         "serve --env $DeployDir/.env --migrate",
         "",
+        "Before starting, verify the deployed binary is reading the intended production .env:",
+        "$DeployDir/$AppName check-config --env $DeployDir/.env",
+        "",
         "If your panel only allows selecting the executable and sends no arguments, this binary will default to:",
         "serve --env .env --migrate",
         "",
@@ -113,5 +123,11 @@ finally {
     }
     else {
         Remove-Item Env:GOCACHE -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $previousGoFlags) {
+        $env:GOFLAGS = $previousGoFlags
+    }
+    else {
+        Remove-Item Env:GOFLAGS -ErrorAction SilentlyContinue
     }
 }

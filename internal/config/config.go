@@ -115,14 +115,7 @@ func Load(path string) (Config, error) {
 	}
 
 	if cfg.DatabaseURL == "" && cfg.ConfigDBPassword != "" {
-		cfg.DatabaseURL = fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			urlEscape(cfg.ConfigDBUser),
-			urlEscape(cfg.ConfigDBPassword),
-			cfg.PostgresHost,
-			cfg.PostgresPort,
-			urlEscape(cfg.ConfigDBName),
-		)
+		cfg.DatabaseURL = postgresDatabaseURL(cfg.PostgresHost, cfg.PostgresPort, cfg.ConfigDBName, cfg.ConfigDBUser, cfg.ConfigDBPassword)
 	}
 
 	return cfg, nil
@@ -174,6 +167,38 @@ func (cfg Config) ValidatePublicServiceURL() error {
 		return fmt.Errorf("CONFIG_CENTER_BASE_URL must not be localhost or a private address before registering to auth-limit, got %q", cfg.BaseURL)
 	}
 	return nil
+}
+
+func (cfg Config) DatabaseTarget() string {
+	host := cfg.PostgresHost
+	port := cfg.PostgresPort
+	database := cfg.ConfigDBName
+	username := cfg.ConfigDBUser
+
+	if cfg.DatabaseURL != "" {
+		parsed, err := url.Parse(cfg.DatabaseURL)
+		if err != nil {
+			return fmt.Sprintf("host=%s port=%s database=%s user=%s", host, port, database, username)
+		}
+		if parsed.Hostname() != "" {
+			host = parsed.Hostname()
+		}
+		if parsed.Port() != "" {
+			port = parsed.Port()
+		}
+		if trimmedPath := strings.TrimPrefix(parsed.EscapedPath(), "/"); trimmedPath != "" {
+			if unescaped, err := url.PathUnescape(trimmedPath); err == nil {
+				database = unescaped
+			} else {
+				database = trimmedPath
+			}
+		}
+		if parsed.User != nil {
+			username = parsed.User.Username()
+		}
+	}
+
+	return fmt.Sprintf("host=%s port=%s database=%s user=%s", host, port, database, username)
 }
 
 func readDotEnv(path string) (map[string]string, error) {
@@ -342,6 +367,19 @@ func parseBool(value string) bool {
 	}
 }
 
+func postgresDatabaseURL(host, port, database, username, password string) string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(username, password),
+		Host:   net.JoinHostPort(host, port),
+		Path:   "/" + database,
+	}
+	query := u.Query()
+	query.Set("sslmode", "disable")
+	u.RawQuery = query.Encode()
+	return u.String()
+}
+
 func isLocalHost(host string) bool {
 	lower := strings.ToLower(host)
 	if lower == "localhost" {
@@ -352,18 +390,4 @@ func isLocalHost(host string) bool {
 		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
-}
-
-func urlEscape(value string) string {
-	replacer := strings.NewReplacer(
-		" ", "%20",
-		"@", "%40",
-		":", "%3A",
-		"/", "%2F",
-		"?", "%3F",
-		"#", "%23",
-		"&", "%26",
-		"=", "%3D",
-	)
-	return replacer.Replace(value)
 }

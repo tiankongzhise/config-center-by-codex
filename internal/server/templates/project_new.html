@@ -5,7 +5,8 @@
     <h1>新建项目</h1>
     <form id="projectForm" class="form">
       <label>项目名称<input name="name" required></label>
-      <label>项目编码<input name="code" pattern="[a-z][a-z0-9-]{2,62}" required></label>
+      <label>项目编码<input name="code" pattern="[a-z][a-z0-9-]{2,62}" maxlength="63" placeholder="例如：order-service" aria-describedby="projectCodeHelp" title="小写字母开头，只能包含小写字母、数字和连字符，长度 3-63 位" required></label>
+      <p id="projectCodeHelp" class="field-help">项目编码是对外读取接口路径里的 {code}，例如 /api/public/projects/order-service/config。建议填写服务或应用的英文短名；全局唯一，创建后不能修改。</p>
       <label>描述<textarea name="description" rows="3"></textarea></label>
       <label>RSA 公钥<textarea name="rsaPublicKey" rows="8" placeholder="-----BEGIN PUBLIC KEY-----"></textarea></label>
       <button type="submit">创建</button>
