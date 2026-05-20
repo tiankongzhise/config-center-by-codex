@@ -34,7 +34,8 @@ PG_ADMIN_SECRET=你的PostgreSQL管理员密码
 AUTH_LIMIT_BASE_URL=https://auth-limit.baichengedu.com
 AUTH_LIMIT_ADMIN=授权服务管理员账号
 AUTH_LIMIT_ADMIN_SECRET=授权服务管理员密码
-AUTH_LIMIT_OPERATOR_USERNAME=config_center_operator
+# auth-limit 用户名规则：3-20 位字母、数字或下划线；自动生成的密码会满足 8-20 位复杂度要求。
+AUTH_LIMIT_OPERATOR_USERNAME=cfgcenter_ops
 AUTH_LIMIT_OPERATOR_PASSWORD=
 AUTH_LIMIT_SERVICE_CODE=config-service-baichengedu
 AUTH_LIMIT_SERVICE_NAME=配置中心生产服务

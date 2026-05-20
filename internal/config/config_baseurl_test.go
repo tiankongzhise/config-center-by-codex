@@ -44,11 +44,26 @@ func TestLoadAuthLimitOperatorDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.AuthLimitOperatorUsername != "config_center_operator" {
+	if cfg.AuthLimitOperatorUsername != "cfgcenter_ops" {
 		t.Fatalf("unexpected operator username %q", cfg.AuthLimitOperatorUsername)
 	}
 	if cfg.AuthLimitServiceName != "配置中心" {
 		t.Fatalf("unexpected service name %q", cfg.AuthLimitServiceName)
+	}
+}
+
+func TestLoadMigratesLegacyLongOperatorUsername(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	content := "CONFIG_CENTER_BASE_URL=https://config-service.baichengedu.com\nAUTH_LIMIT_OPERATOR_USERNAME=config_center_operator\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.AuthLimitOperatorUsername != "cfgcenter_ops" {
+		t.Fatalf("expected legacy username to migrate to cfgcenter_ops, got %q", cfg.AuthLimitOperatorUsername)
 	}
 }
 

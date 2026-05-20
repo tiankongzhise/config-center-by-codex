@@ -15,6 +15,9 @@ const (
 	defaultAddr             = ":8080"
 	defaultBaseURL          = "http://localhost:8080"
 	defaultAuthLimitBaseURL = "https://auth-limit.baichengedu.com"
+
+	defaultAuthLimitOperatorUsername = "cfgcenter_ops"
+	legacyAuthLimitOperatorUsername  = "config_center_operator"
 )
 
 type Config struct {
@@ -91,7 +94,7 @@ func Load(path string) (Config, error) {
 		AuthLimitBaseURL:             strings.TrimRight(get("AUTH_LIMIT_BASE_URL", defaultAuthLimitBaseURL), "/"),
 		AuthLimitAdmin:               firstNonEmpty(get("AUTH_LIMIT_ADMIN", ""), get("AUTH_SERVICE_ADMIN", "")),
 		AuthLimitAdminSecret:         firstNonEmpty(get("AUTH_LIMIT_ADMIN_SECRET", ""), get("AUTH_SERVICE_ADMIN_SECRET", "")),
-		AuthLimitOperatorUsername:    get("AUTH_LIMIT_OPERATOR_USERNAME", "config_center_operator"),
+		AuthLimitOperatorUsername:    get("AUTH_LIMIT_OPERATOR_USERNAME", defaultAuthLimitOperatorUsername),
 		AuthLimitOperatorPassword:    get("AUTH_LIMIT_OPERATOR_PASSWORD", ""),
 		AuthLimitOperatorDisplayName: get("AUTH_LIMIT_OPERATOR_DISPLAY_NAME", "配置中心接入用户"),
 		AuthLimitOperatorRoleCode:    get("AUTH_LIMIT_OPERATOR_ROLE_CODE", "config_center_operator"),
@@ -107,6 +110,9 @@ func Load(path string) (Config, error) {
 
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
+	}
+	if cfg.AuthLimitOperatorUsername == legacyAuthLimitOperatorUsername {
+		cfg.AuthLimitOperatorUsername = defaultAuthLimitOperatorUsername
 	}
 
 	if cfg.DatabaseURL == "" && cfg.ConfigDBPassword != "" {

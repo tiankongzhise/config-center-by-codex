@@ -6,14 +6,15 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +59,8 @@ type RegisteredService struct {
 	AppSecret        string
 	OperatorPassword string
 }
+
+var authLimitUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,20}$`)
 
 func New(cfg config.Config) *Client {
 	return &Client{
@@ -104,21 +107,24 @@ func (c *Client) BootstrapOperator(ctx context.Context, adminToken string, cfg c
 		}
 		password = generated
 	}
+	if err := validateOperatorCredentials(cfg.AuthLimitOperatorUsername, password); err != nil {
+		return bootstrapResult{}, err
+	}
 
 	userID, err := c.ensureUser(ctx, cfg, password)
 	if err != nil {
-		return bootstrapResult{}, err
+		return bootstrapResult{}, fmt.Errorf("bootstrap auth-limit operator user: %w", err)
 	}
 	permissionIDs, err := c.permissionIDs(ctx, adminToken, []string{"app:manage", "service:manage", "limit:manage", "statistics:read"})
 	if err != nil {
-		return bootstrapResult{}, err
+		return bootstrapResult{}, fmt.Errorf("load auth-limit permissions: %w", err)
 	}
 	roleID, err := c.ensureRole(ctx, adminToken, cfg, permissionIDs)
 	if err != nil {
-		return bootstrapResult{}, err
+		return bootstrapResult{}, fmt.Errorf("bootstrap auth-limit operator role: %w", err)
 	}
 	if err := c.assignUserRoles(ctx, adminToken, userID, []string{roleID}); err != nil {
-		return bootstrapResult{}, err
+		return bootstrapResult{}, fmt.Errorf("assign auth-limit operator role: %w", err)
 	}
 	return bootstrapResult{UserID: userID, RoleID: roleID, Password: password}, nil
 }
@@ -137,7 +143,7 @@ func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg 
 		} `json:"data"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/api/services", bearer(operatorToken), servicePayload, &serviceResponse); err != nil {
-		return RegisteredService{}, err
+		return RegisteredService{}, fmt.Errorf("register auth-limit service: %w", err)
 	}
 
 	var appPayload = map[string]any{"name": cfg.AuthLimitAppName}
@@ -148,7 +154,7 @@ func (c *Client) RegisterService(ctx context.Context, operatorToken string, cfg 
 		} `json:"data"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/api/apps", bearer(operatorToken), appPayload, &appResponse); err != nil {
-		return RegisteredService{}, err
+		return RegisteredService{}, fmt.Errorf("create auth-limit app: %w", err)
 	}
 
 	return RegisteredService{
@@ -420,7 +426,10 @@ func (c *Client) doJSON(ctx context.Context, method, path, authorization string,
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}
-	return c.do(req, target)
+	if err := c.do(req, target); err != nil {
+		return fmt.Errorf("auth-limit %s %s: %w", method, path, err)
+	}
+	return nil
 }
 
 func (c *Client) newJSONRequest(ctx context.Context, method, path string, payload any) (*http.Request, error) {
@@ -476,9 +485,46 @@ func isConflict(err error) bool {
 }
 
 func randomPassword() (string, error) {
-	bytes := make([]byte, 24)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	var builder strings.Builder
+	builder.WriteString("Aa1!")
+	max := big.NewInt(int64(len(alphabet)))
+	for builder.Len() < 20 {
+		index, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		builder.WriteByte(alphabet[index.Int64()])
 	}
-	return "Aa1!" + base64.RawURLEncoding.EncodeToString(bytes), nil
+	return builder.String(), nil
+}
+
+func validateOperatorCredentials(username, password string) error {
+	if !authLimitUsernamePattern.MatchString(username) {
+		return fmt.Errorf("AUTH_LIMIT_OPERATOR_USERNAME must match ^[A-Za-z0-9_]{3,20}$ for auth-limit, got %q", username)
+	}
+	if !validAuthLimitPassword(password) {
+		return errors.New("AUTH_LIMIT_OPERATOR_PASSWORD must be 8-20 chars and contain uppercase, lowercase, digit and special character")
+	}
+	return nil
+}
+
+func validAuthLimitPassword(password string) bool {
+	if len(password) < 8 || len(password) > 20 {
+		return false
+	}
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, r := range password {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r >= 'a' && r <= 'z':
+			hasLower = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		default:
+			hasSpecial = true
+		}
+	}
+	return hasUpper && hasLower && hasDigit && hasSpecial
 }
