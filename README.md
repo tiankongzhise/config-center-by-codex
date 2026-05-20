@@ -212,7 +212,28 @@ http://localhost:9313
 5. 服务端立即加密保存，只在数据库中保留密文和内容哈希。
 6. 外部调用方通过 auth-limit 鉴权后读取密文配置。
 
+注意：配置中心本地账号只用于管理项目，不会自动同步到 auth-limit，也不能直接换取 auth-limit `access_token`。读取对外接口时需要使用 auth-limit 账号登录后得到的 Bearer Token，或使用调用方自己的 M2M APP 签名。
+
 ## 对外读取接口
+
+### 获取 Bearer Token
+
+在项目详情页的“外部读取鉴权”区域，可以输入 auth-limit 用户名和密码，点击“获取 access_token”，页面会生成可直接使用的 curl 示例。
+
+也可以直接调用 auth-limit：
+
+```bash
+curl -sS -X POST "https://auth-limit.baichengedu.com/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "<AUTH_LIMIT_USERNAME>",
+    "password": "<AUTH_LIMIT_PASSWORD>"
+  }'
+```
+
+使用响应里的 `data.accessToken` 调用配置中心。
+
+### 读取配置
 
 读取 config：
 
@@ -235,6 +256,8 @@ appId: <APP_ID>
 timestamp: <UNIX_SECONDS>
 sign: <SIGN>
 ```
+
+M2M 的 `APP_ID` 和 `APP_SECRET` 应该是调用方自己在 auth-limit 中创建的 APP 凭据，不建议复用配置中心服务注册时写入 `.env` 的 `AUTH_LIMIT_APP_ID` 和 `AUTH_LIMIT_APP_SECRET`。
 
 鉴权和限流都通过后，响应示例：
 
@@ -269,6 +292,7 @@ go run ./cmd/config-center serve --env .env --migrate
 - `docs/architecture.md`：架构和安全边界。
 - `docs/database.md`：数据库和迁移设计。
 - `docs/auth-limit-integration.md`：auth-limit 接入说明。
+- `docs/external-auth-guide.md`：项目创建后如何获取 auth-limit 授权并读取配置。
 - `docs/development.md`：开发和提交流程。
 - `docs/api-usage-guide.md`：auth-limit API 使用说明。
 

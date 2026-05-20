@@ -52,6 +52,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/auth/me", s.me)
+	mux.HandleFunc("POST /api/auth-limit/login", s.loginAuthLimit)
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("GET /api/projects/{id}", s.getProject)
@@ -132,12 +133,14 @@ func (s *Server) projectPage(w http.ResponseWriter, r *http.Request) {
 	configValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "config")
 	envValue, _ := s.configs.GetForOwner(r.Context(), user, project.ID, "env")
 	s.render(w, "project_detail.html", map[string]any{
-		"Title":     project.Name,
-		"User":      user,
-		"Project":   project,
-		"Config":    configValue,
-		"Env":       envValue,
-		"PublicURL": strings.TrimRight(s.cfg.BaseURL, "/") + "/api/public/projects/" + project.Code,
+		"Title":            project.Name,
+		"User":             user,
+		"Project":          project,
+		"Config":           configValue,
+		"Env":              envValue,
+		"PublicURL":        strings.TrimRight(s.cfg.BaseURL, "/") + "/api/public/projects/" + project.Code,
+		"AuthLimitBaseURL": strings.TrimRight(s.cfg.AuthLimitBaseURL, "/"),
+		"AuthLimitReady":   s.cfg.AuthLimitServiceID != "",
 	})
 }
 
@@ -204,6 +207,37 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (s *Server) loginAuthLimit(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUser(w, r); !ok {
+		return
+	}
+	var input struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.Username = strings.TrimSpace(input.Username)
+	if input.Username == "" || input.Password == "" {
+		writeError(w, http.StatusBadRequest, "auth-limit username and password are required")
+		return
+	}
+
+	result, err := s.gateway.Login(r.Context(), input.Username, input.Password)
+	if err != nil {
+		status, message := authLimitLoginError(err)
+		writeError(w, status, message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tokenType":            result.TokenType,
+		"accessToken":          result.AccessToken,
+		"accessTokenExpiresAt": result.AccessTokenExpiresAt,
+		"authLimitBaseURL":     strings.TrimRight(s.cfg.AuthLimitBaseURL, "/"),
+	})
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
@@ -510,6 +544,18 @@ func writeStoreOrValidationError(w http.ResponseWriter, err error, conflictMessa
 		writeError(w, http.StatusNotFound, "resource not found")
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
+func authLimitLoginError(err error) (int, string) {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "status=401"):
+		return http.StatusUnauthorized, "auth-limit 用户名或密码不正确"
+	case strings.Contains(message, "status=423"):
+		return http.StatusLocked, "auth-limit 账号已被临时锁定"
+	default:
+		return http.StatusBadGateway, "auth-limit 登录失败，请检查服务地址或稍后重试"
 	}
 }
 

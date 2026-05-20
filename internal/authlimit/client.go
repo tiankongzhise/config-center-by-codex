@@ -36,6 +36,14 @@ type AuthResult struct {
 	Roles       []string
 }
 
+type LoginResult struct {
+	TokenType             string
+	AccessToken           string
+	AccessTokenExpiresAt  string
+	RefreshToken          string
+	RefreshTokenExpiresAt string
+}
+
 type LimitRequest struct {
 	ServiceID string
 	Path      string
@@ -78,7 +86,7 @@ func New(cfg config.Config) *Client {
 	}
 }
 
-func (c *Client) LoginAdmin(ctx context.Context, username, password string) (string, error) {
+func (c *Client) Login(ctx context.Context, username, password string) (LoginResult, error) {
 	var payload struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -87,16 +95,38 @@ func (c *Client) LoginAdmin(ctx context.Context, username, password string) (str
 	payload.Password = password
 	var response struct {
 		Data struct {
-			AccessToken string `json:"accessToken"`
+			TokenType             string `json:"tokenType"`
+			AccessToken           string `json:"accessToken"`
+			AccessTokenExpiresAt  string `json:"accessTokenExpiresAt"`
+			RefreshToken          string `json:"refreshToken"`
+			RefreshTokenExpiresAt string `json:"refreshTokenExpiresAt"`
 		} `json:"data"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/api/auth/login", "", payload, &response); err != nil {
-		return "", err
+		return LoginResult{}, err
 	}
 	if response.Data.AccessToken == "" {
-		return "", errors.New("auth-limit login response missing access token")
+		return LoginResult{}, errors.New("auth-limit login response missing access token")
 	}
-	return response.Data.AccessToken, nil
+	tokenType := response.Data.TokenType
+	if tokenType == "" {
+		tokenType = "Bearer"
+	}
+	return LoginResult{
+		TokenType:             tokenType,
+		AccessToken:           response.Data.AccessToken,
+		AccessTokenExpiresAt:  response.Data.AccessTokenExpiresAt,
+		RefreshToken:          response.Data.RefreshToken,
+		RefreshTokenExpiresAt: response.Data.RefreshTokenExpiresAt,
+	}, nil
+}
+
+func (c *Client) LoginAdmin(ctx context.Context, username, password string) (string, error) {
+	result, err := c.Login(ctx, username, password)
+	if err != nil {
+		return "", err
+	}
+	return result.AccessToken, nil
 }
 
 type bootstrapResult struct {

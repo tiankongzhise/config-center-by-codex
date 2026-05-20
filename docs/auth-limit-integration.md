@@ -40,6 +40,15 @@ auth-limit 仅用于：
 
 配置中心不解析或保存调用方身份，只使用 auth-limit 返回结果决定是否允许继续。
 
+配置中心本地用户和 auth-limit 用户是分离的。用户在配置中心 UI 注册账号、创建项目后，只获得项目管理权限；这个账号不会自动成为 auth-limit 用户，也不能直接换取 auth-limit `access_token`。
+
+项目创建者可以在项目详情页使用“外部读取鉴权”面板获取调用示例：
+
+- Bearer Token：输入已存在的 auth-limit 用户名和密码，配置中心后端代理调用 auth-limit `/api/auth/login`，只把短期 `access_token` 返回到当前页面。
+- M2M 签名：调用方使用自己的 auth-limit APP 凭据生成 `appId/timestamp/sign`，配置中心只负责把这些请求头转发给 auth-limit 校验。
+
+如果调用方还没有 auth-limit 账号或 APP，需要先由 auth-limit 管理员创建并授权。`AUTH_LIMIT_APP_ID` 和 `AUTH_LIMIT_APP_SECRET` 是配置中心服务接入 auth-limit 时的服务侧凭据，不应该作为普通调用方共享密钥。
+
 ## 限流校验
 
 鉴权通过后，配置中心调用 auth-limit `/oidc/limit/verify`：

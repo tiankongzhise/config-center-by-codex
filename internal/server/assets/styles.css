@@ -66,6 +66,14 @@ a {
   margin-bottom: 20px;
 }
 
+.section-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #dfe5ee;
@@ -159,6 +167,17 @@ button,
   min-height: 20px;
 }
 
+.pill {
+  background: #eef3f8;
+  border-radius: 999px;
+  color: #1f2937;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 7px 10px;
+}
+
 .copy-line {
   background: #f5f7fb;
   border: 1px solid #dfe5ee;
@@ -169,14 +188,89 @@ button,
   padding: 10px;
 }
 
+.auth-guide {
+  margin-bottom: 18px;
+}
+
+.auth-methods {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-method + .auth-method {
+  border-left: 1px solid #dfe5ee;
+  padding-left: 24px;
+}
+
+.auth-method h3,
+.examples h3 {
+  margin-top: 0;
+}
+
+.compact-form {
+  gap: 10px;
+}
+
+.token-output {
+  margin-top: 14px;
+}
+
+.inline-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.small {
+  padding: 8px 12px;
+}
+
+.steps {
+  color: #3a4351;
+  line-height: 1.6;
+  padding-left: 20px;
+}
+
+.examples {
+  border-top: 1px solid #dfe5ee;
+  margin-top: 22px;
+  padding-top: 18px;
+}
+
+.code-block {
+  background: #172033;
+  border-radius: 6px;
+  color: #edf4ff;
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 760px) {
   .grid,
-  .page-head {
+  .page-head,
+  .section-head,
+  .auth-methods {
     display: block;
   }
 
   .page-head .button {
     margin-top: 12px;
+  }
+
+  .auth-method + .auth-method {
+    border-left: 0;
+    border-top: 1px solid #dfe5ee;
+    margin-top: 18px;
+    padding-left: 0;
+    padding-top: 18px;
   }
 
   .panel {

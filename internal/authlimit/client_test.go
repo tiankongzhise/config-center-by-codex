@@ -2,6 +2,9 @@ package authlimit
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/tiankongzhise/config-center-by-codex/internal/config"
@@ -41,6 +44,39 @@ func TestValidateOperatorCredentials(t *testing.T) {
 	}
 	if err := validateOperatorCredentials("cfgcenter_ops", "Aa1!234567890123456789"); err == nil {
 		t.Fatal("expected long password to be rejected")
+	}
+}
+
+func TestLoginParsesTokenResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/auth/login" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var payload struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode login payload: %v", err)
+		}
+		if payload.Username != "alice" || payload.Password != "secret" {
+			t.Fatalf("unexpected payload: %+v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"message":"ok","data":{"tokenType":"Bearer","accessToken":"access-1","accessTokenExpiresAt":"2026-05-19T08:30:00Z","refreshToken":"refresh-1","refreshTokenExpiresAt":"2026-05-20T08:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	client := New(config.Config{AuthLimitBaseURL: server.URL})
+	result, err := client.Login(context.Background(), "alice", "secret")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if result.TokenType != "Bearer" || result.AccessToken != "access-1" {
+		t.Fatalf("unexpected login result: %+v", result)
+	}
+	if result.RefreshToken != "refresh-1" || result.AccessTokenExpiresAt == "" {
+		t.Fatalf("expected refresh token and expiry: %+v", result)
 	}
 }
 

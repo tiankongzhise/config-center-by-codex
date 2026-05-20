@@ -21,8 +21,58 @@
       <h2>对外读取地址</h2>
       <div class="copy-line">{{.PublicURL}}/config</div>
       <div class="copy-line">{{.PublicURL}}/env</div>
-      <p class="muted">外部读取需要通过 auth-limit 的 Bearer 或 M2M 鉴权。</p>
+      {{if .AuthLimitReady}}
+      <p class="muted">服务已接入 auth-limit。读取时必须携带 Bearer Token 或 M2M 签名。</p>
+      {{else}}
+      <p class="message">当前服务还没有配置 AUTH_LIMIT_SERVICE_ID，外部读取会被拒绝。</p>
+      {{end}}
     </section>
+  </section>
+  <section class="panel auth-guide">
+    <div class="section-head">
+      <div>
+        <h2>外部读取鉴权</h2>
+        <p class="muted">配置中心账号只用于管理项目；读取接口校验的是 auth-limit 凭据。</p>
+      </div>
+      <span class="pill">{{.AuthLimitBaseURL}}</span>
+    </div>
+    <div class="auth-methods">
+      <section class="auth-method">
+        <h3>Bearer Token</h3>
+        <p class="muted">使用已在 auth-limit 注册并授权的账号登录。这里输入的不是配置中心账号。</p>
+        <form id="authLimitLoginForm" class="form compact-form">
+          <label>auth-limit 用户名<input name="username" autocomplete="username" required></label>
+          <label>auth-limit 密码<input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">获取 access_token</button>
+          <p id="authLimitMessage" class="message"></p>
+        </form>
+        <label class="token-output">access_token
+          <textarea id="accessToken" rows="5" readonly placeholder="获取成功后显示，用作 Authorization: Bearer <ACCESS_TOKEN>"></textarea>
+        </label>
+        <div class="inline-actions">
+          <button id="copyTokenButton" class="secondary small" type="button" disabled>复制 token</button>
+          <span id="tokenExpiry" class="muted"></span>
+        </div>
+      </section>
+      <section class="auth-method">
+        <h3>M2M 签名</h3>
+        <p class="muted">服务、脚本和 CI 推荐使用调用方自己的 APP_ID/APP_SECRET；不要把配置中心服务自身的密钥发给普通调用方。</p>
+        <ol class="steps">
+          <li>在 auth-limit 为调用方创建 APP，并保存一次性返回的 APP Secret。</li>
+          <li>请求时生成 Unix 秒级 timestamp。</li>
+          <li>按参数名升序拼接签名串，再用 APP Secret 做 HMAC-SHA256。</li>
+          <li>读取配置时携带 appId、timestamp、sign 三个请求头。</li>
+        </ol>
+        <div class="copy-line">appId: &lt;APP_ID&gt;</div>
+        <div class="copy-line">timestamp: &lt;UNIX_SECONDS&gt;</div>
+        <div class="copy-line">sign: &lt;HMAC_SHA256_HEX&gt;</div>
+      </section>
+    </div>
+    <div class="examples">
+      <h3>Bearer 调用示例</h3>
+      <pre id="configCurl" class="code-block"></pre>
+      <pre id="envCurl" class="code-block"></pre>
+    </div>
   </section>
   <section class="grid">
     <form class="panel form config-form" data-kind="config">
@@ -43,6 +93,62 @@
 </main>
 <script>
 const projectId = "{{.Project.ID}}";
+const publicURL = {{printf "%q" .PublicURL}};
+const tokenPlaceholder = "<ACCESS_TOKEN>";
+let currentAccessToken = "";
+
+function bearerValue() {
+  return currentAccessToken || tokenPlaceholder;
+}
+
+function renderCurlExamples() {
+  document.querySelector("#configCurl").textContent = `curl -sS "${publicURL}/config" \\
+  -H "Authorization: Bearer ${bearerValue()}"`;
+  document.querySelector("#envCurl").textContent = `curl -sS "${publicURL}/env" \\
+  -H "Authorization: Bearer ${bearerValue()}"`;
+}
+
+renderCurlExamples();
+
+document.querySelector("#authLimitLoginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = document.querySelector("#authLimitMessage");
+  const tokenOutput = document.querySelector("#accessToken");
+  const copyButton = document.querySelector("#copyTokenButton");
+  const expiry = document.querySelector("#tokenExpiry");
+  message.textContent = "正在向 auth-limit 换取 token...";
+  const data = Object.fromEntries(new FormData(event.target).entries());
+  const response = await fetch("/api/auth-limit/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    currentAccessToken = "";
+    tokenOutput.value = "";
+    copyButton.disabled = true;
+    expiry.textContent = "";
+    message.textContent = body.error || "获取 access_token 失败";
+    renderCurlExamples();
+    return;
+  }
+  currentAccessToken = body.accessToken || "";
+  tokenOutput.value = currentAccessToken;
+  copyButton.disabled = currentAccessToken === "";
+  expiry.textContent = body.accessTokenExpiresAt ? `过期时间：${body.accessTokenExpiresAt}` : "";
+  message.textContent = currentAccessToken ? "已获取 access_token，只在当前页面显示。" : "auth-limit 未返回 access_token";
+  renderCurlExamples();
+});
+
+document.querySelector("#copyTokenButton").addEventListener("click", async () => {
+  if (!currentAccessToken) return;
+  const message = document.querySelector("#authLimitMessage");
+  try {
+    await navigator.clipboard.writeText(currentAccessToken);
+    message.textContent = "access_token 已复制";
+  } catch {
+    document.querySelector("#accessToken").select();
+    message.textContent = "浏览器禁止自动复制，已选中 token";
+  }
+});
+
 document.querySelector("#metaForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target).entries());
